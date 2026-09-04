@@ -14,6 +14,30 @@ import "coordinate_locator.oo";
 import "root_cause.oo";
 import "autopsy_parser.oo";
 
+type AutopsyStackFrame = struct {
+    frame_num: Int,
+    address: String,
+    symbol: String,
+    location: String
+};
+
+type AutopsyData = struct {
+    schema_version: String,
+    crash_signal: Int,
+    signal_name: String,
+    fault_address: String,
+    failure_coordinate: String,
+    root_cause: String,
+    description: String,
+    backtrace: List[AutopsyStackFrame],
+    registers_rip: String,
+    registers_rsp: String,
+    registers_rbp: String,
+    cap_trapped: Bool,
+    granted_caps: List[String],
+    remediation: String
+};
+
 pub fn autopsy_format_report(data: AutopsyData) -> String {
     let sig: Int = data.crash_signal;
     let s_sig: String = sig.to_string();
