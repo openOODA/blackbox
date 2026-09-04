@@ -76,7 +76,7 @@ ooda blackbox trace
 | [openOODA/website](https://github.com/openOODA/website) | Official openOODA website source |
 | [openOODA/install](https://github.com/openOODA/install) | Installation scripts and platform packages |
 | [openOODA/.github](https://github.com/openOODA/.github) | Shared GitHub workflows and community health |
-| [openOODA/blackbox](https://github.com/openOODA/blackbox) | Flight recorder and crash autopsy subsystem |
+| [openOODA/blackbox](https://github.com/openOODA/blackbox) | Operational Logistics: Agent-native execution flight recorder and crash autopsy engine |
 
 ## License
 

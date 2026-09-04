@@ -89,7 +89,7 @@ pub fn ast_diff_compare_texts(ast_before: String, ast_after: String) -> String {
     return out;
 }
 
-pub fn ast_diff_compare_files(&p: ProcessCap, bin: String, file_b: String, file_a: String) -> Result[String, String] {
+pub fn ast_diff_compare_files(p: &ProcessCap, bin: String, file_b: String, file_a: String) -> Result[String, String] {
     let rb: Result[String, String] = compiler_run_ast(p, bin, file_b);
     if rb.is_err() { return rb; }
     let ra: Result[String, String] = compiler_run_ast(p, bin, file_a);
@@ -97,7 +97,7 @@ pub fn ast_diff_compare_files(&p: ProcessCap, bin: String, file_b: String, file_
     return Ok(ast_diff_compare_texts(rb.unwrap(), ra.unwrap()));
 }
 
-pub fn ast_diff_inspect_file(&p: ProcessCap, bin: String, file: String) -> Result[String, String] {
+pub fn ast_diff_inspect_file(p: &ProcessCap, bin: String, file: String) -> Result[String, String] {
     let r: Result[String, String] = compiler_run_ast(p, bin, file);
     if r.is_err() { return r; }
     let raw: String = r.unwrap();

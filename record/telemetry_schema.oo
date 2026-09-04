@@ -55,3 +55,18 @@ pub fn phase_to_name(p: Int) -> String {
     if p == 7 { return "SHUTDOWN"; }
     return "UNKNOWN_PHASE";
 }
+
+pub fn telemetry_schema_event_name(t: Int) -> String {
+    return event_type_to_name(t);
+}
+
+pub fn telemetry_schema_phase_name(p: Int) -> String {
+    return phase_to_name(p);
+}
+
+pub fn telemetry_schema_phase_change() -> Int { return event_type_phase_change(); }
+pub fn telemetry_schema_cap_require() -> Int { return event_type_cap_require(); }
+pub fn telemetry_schema_ast_node() -> Int { return event_type_ast_node(); }
+pub fn telemetry_schema_arena_mark() -> Int { return event_type_arena_mark(); }
+pub fn telemetry_schema_io_dispatch() -> Int { return event_type_io_dispatch(); }
+pub fn telemetry_schema_trap_signal() -> Int { return event_type_trap_signal(); }

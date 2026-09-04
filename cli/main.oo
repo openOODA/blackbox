@@ -26,7 +26,7 @@ pub fn cli_help() -> String {
     return out;
 }
 
-pub fn cli_run_autopsy(&fs: FsReadCap, path: String) -> Result[Int, String] {
+pub fn cli_run_autopsy(fs: &FsReadCap, path: String) -> Result[Int, String] {
     let target: String = if chars_len(path) > 0 { path } else { dir_watcher_autopsy_file() };
     let rd: Result[String, String] = dir_watcher_read_autopsy(fs, target);
     if rd.is_err() {
@@ -42,7 +42,7 @@ pub fn cli_run_autopsy(&fs: FsReadCap, path: String) -> Result[Int, String] {
     return Ok(0);
 }
 
-pub fn cli_run_diff(&p: ProcessCap, file1: String, file2: String) -> Result[Int, String] {
+pub fn cli_run_diff(p: &ProcessCap, file1: String, file2: String) -> Result[Int, String] {
     if chars_len(file1) == 0 {
         println("ERR missing file argument for diff");
         return Err("missing file argument");
@@ -71,7 +71,7 @@ pub fn cli_run_trace() -> Result[Int, String] {
     return Ok(0);
 }
 
-pub fn cli_dispatch(&p: ProcessCap, &fs: FsReadCap, &fw: FsWriteCap, args: List[String]) -> Result[Int, String] {
+pub fn cli_dispatch(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, args: List[String]) -> Result[Int, String] {
     let n: Int = list_len(args);
     if n == 0 {
         println(cli_help());
@@ -108,6 +108,6 @@ pub fn cli_dispatch(&p: ProcessCap, &fs: FsReadCap, &fw: FsWriteCap, args: List[
     return Err("unknown subcommand: " + subcmd);
 }
 
-pub fn main(&p: ProcessCap, &fs: FsReadCap, &fw: FsWriteCap, &env: EnvCap, args: List[String]) -> Result[Int, String] {
+pub fn main(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap, args: List[String]) -> Result[Int, String] {
     return cli_dispatch(p, fs, fw, args);
 }

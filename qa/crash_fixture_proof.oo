@@ -15,6 +15,30 @@ import "autopsy/coordinate_locator.oo";
 import "autopsy/root_cause.oo";
 import "autopsy/report_formatter.oo";
 
+type AutopsyStackFrame = struct {
+    frame_num: Int,
+    address: String,
+    symbol: String,
+    location: String
+};
+
+type AutopsyData = struct {
+    schema_version: String,
+    crash_signal: Int,
+    signal_name: String,
+    fault_address: String,
+    failure_coordinate: String,
+    root_cause: String,
+    description: String,
+    backtrace: List[AutopsyStackFrame],
+    registers_rip: String,
+    registers_rsp: String,
+    registers_rbp: String,
+    cap_trapped: Bool,
+    granted_caps: List[String],
+    remediation: String
+};
+
 pub fn crash_fixture_null_ptr_json() -> String {
     let mut out: String = "{\n";
     out = out + "  \"schema_version\": \"1.0.0\",\n";
@@ -96,7 +120,8 @@ pub fn proof_verify_cap_trap() -> Result[Int, String] {
     }
 
     let data: AutopsyData = res.unwrap();
-    if !data.cap_trapped {
+    let is_trapped: Bool = data.cap_trapped;
+    if !is_trapped {
         return Err("proof_verify_cap_trap: expected cap_trapped to be true");
     }
     if data.root_cause != "CAPABILITY_TRAP_VIOLATION" {

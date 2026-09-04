@@ -51,8 +51,8 @@ pub fn event_record_to_json(r: EventRecord) -> String {
 pub fn event_record_format(r: EventRecord) -> String {
     let seq_num: Int = r.seq;
     let s_seq: String = seq_num.to_string();
-    let p_name: String = phase_to_name(r.phase);
-    let t_name: String = event_type_to_name(r.event_type);
+    let p_name: String = telemetry_schema_phase_name(r.phase);
+    let t_name: String = telemetry_schema_event_name(r.event_type);
     let d: String = r.detail;
     return "[" + s_seq + "] " + p_name + "::" + t_name + " - " + d;
 }

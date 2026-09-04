@@ -18,12 +18,12 @@ import "crash_fixture_proof.oo";
 pub fn proof_double_run_autopsy() -> Result[Int, String] {
     let json: String = crash_fixture_null_ptr_json();
 
-    let r1: Result[String, String] = autopsy_format_from_json(json);
+    let r1: Result[String, String] = report_formatter_from_json(json);
     if r1.is_err() {
         return Err("proof_double_run_autopsy: run 1 failed: " + r1.unwrap_err());
     }
 
-    let r2: Result[String, String] = autopsy_format_from_json(json);
+    let r2: Result[String, String] = report_formatter_from_json(json);
     if r2.is_err() {
         return Err("proof_double_run_autopsy: run 2 failed: " + r2.unwrap_err());
     }

@@ -14,7 +14,7 @@ pub fn compiler_default_bin() -> String {
     return "oodac";
 }
 
-pub fn compiler_run_stage(&p: ProcessCap, bin: String, stage: String, file_path: String) -> Result[String, String] {
+pub fn compiler_run_stage(p: &ProcessCap, bin: String, stage: String, file_path: String) -> Result[String, String] {
     if chars_len(file_path) == 0 {
         return Err("compiler_run_stage: empty file path");
     }
@@ -23,14 +23,14 @@ pub fn compiler_run_stage(&p: ProcessCap, bin: String, stage: String, file_path:
     return r;
 }
 
-pub fn compiler_run_ast(&p: ProcessCap, bin: String, file_path: String) -> Result[String, String] {
+pub fn compiler_run_ast(p: &ProcessCap, bin: String, file_path: String) -> Result[String, String] {
     return compiler_run_stage(p, bin, "ast", file_path);
 }
 
-pub fn compiler_run_tokens(&p: ProcessCap, bin: String, file_path: String) -> Result[String, String] {
+pub fn compiler_run_tokens(p: &ProcessCap, bin: String, file_path: String) -> Result[String, String] {
     return compiler_run_stage(p, bin, "tokens", file_path);
 }
 
-pub fn compiler_run_outline(&p: ProcessCap, bin: String, file_path: String) -> Result[String, String] {
+pub fn compiler_run_outline(p: &ProcessCap, bin: String, file_path: String) -> Result[String, String] {
     return compiler_run_stage(p, bin, "outline", file_path);
 }

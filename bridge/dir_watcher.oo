@@ -18,7 +18,7 @@ pub fn dir_watcher_autopsy_file() -> String {
     return ".blackbox/autopsy.json";
 }
 
-pub fn dir_watcher_has_autopsy(&fs: FsReadCap, path: String) -> Bool {
+pub fn dir_watcher_has_autopsy(fs: &FsReadCap, path: String) -> Bool {
     let mut target: String = dir_watcher_autopsy_file();
     if chars_len(path) > 0 {
         target = path;
@@ -30,7 +30,7 @@ pub fn dir_watcher_has_autopsy(&fs: FsReadCap, path: String) -> Bool {
     return res.is_ok();
 }
 
-pub fn dir_watcher_read_autopsy(&fs: FsReadCap, path: String) -> Result[String, String] {
+pub fn dir_watcher_read_autopsy(fs: &FsReadCap, path: String) -> Result[String, String] {
     let mut target: String = dir_watcher_autopsy_file();
     if chars_len(path) > 0 {
         target = path;

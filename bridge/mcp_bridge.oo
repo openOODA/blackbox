@@ -100,7 +100,7 @@ pub fn blackbox_mcp_wrap_text(text: String) -> String {
     return "{\"content\":[{\"type\":\"text\",\"text\":\"" + esc + "\"}]}";
 }
 
-pub fn blackbox_mcp_dispatch(name: String, args: String, &fs: FsReadCap, &p: ProcessCap) -> String {
+pub fn blackbox_mcp_dispatch(name: String, args: String, fs: &FsReadCap, p: &ProcessCap) -> String {
     if name == "blackbox_autopsy" {
         let mut pth: String = mcp_extract_arg(args, "path");
         if chars_len(pth) == 0 {
@@ -130,4 +130,12 @@ pub fn blackbox_mcp_dispatch(name: String, args: String, &fs: FsReadCap, &p: Pro
     }
 
     return "{\"isError\":true,\"content\":[{\"type\":\"text\",\"text\":\"Unknown tool: " + name + "\"}]}";
+}
+
+pub fn mcp_bridge_tool_count() -> Int {
+    return blackbox_mcp_tool_count();
+}
+
+pub fn mcp_bridge_tool_caps(name: String) -> Int {
+    return blackbox_mcp_tool_caps(name);
 }

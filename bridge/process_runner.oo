@@ -10,7 +10,7 @@
 //   3. Capture standard output, error output, and exit status.
 //   4. Detect abnormal process termination and trigger autopsy workflow.
 
-pub fn process_run_cmd(&p: ProcessCap, cmd: String, arg1: String, arg2: String) -> Result[String, String] {
+pub fn process_run_cmd(p: &ProcessCap, cmd: String, arg1: String, arg2: String) -> Result[String, String] {
     if chars_len(cmd) == 0 {
         return Err("process_run_cmd: empty command");
     }
@@ -18,7 +18,7 @@ pub fn process_run_cmd(&p: ProcessCap, cmd: String, arg1: String, arg2: String) 
     return r;
 }
 
-pub fn process_trace_execution(&p: ProcessCap, cmd: String, arg1: String) -> Result[String, String] {
+pub fn process_trace_execution(p: &ProcessCap, cmd: String, arg1: String) -> Result[String, String] {
     if chars_len(cmd) == 0 {
         return Err("process_trace_execution: empty command");
     }

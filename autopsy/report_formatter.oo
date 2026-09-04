@@ -102,3 +102,7 @@ pub fn autopsy_format_from_json(json: String) -> Result[String, String] {
     let data: AutopsyData = res.unwrap();
     return Ok(autopsy_format_report(data));
 }
+
+pub fn report_formatter_from_json(json: String) -> Result[String, String] {
+    return autopsy_format_from_json(json);
+}
