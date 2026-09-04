@@ -1,12 +1,18 @@
-// # Blackbox .docs — Hidden Documentation Root
+// # Blackbox Documentation Subsystem Front Door
 //
-// Logline: Documentation root for tools and LLM harnesses referencing .docs.
+// Logline: Re-exports subsystem documentation references and specification contracts.
 //
-// Setup: Mirror of subsystem documentation for agent workflows.
+// Setup: Outlines specification chapters in docs/blackbox.oot.
 //
 // Beats:
-//   1. INDEX.oot — Blackbox architecture and reference manual.
-//   2. CLI.oot — Blackbox command line interface.
+//   1. Register blackbox.oot specification file.
+//   2. Expose subsystem documentation metadata.
+//   3. Provide agent documentation discovery entry point.
 
-import "INDEX.oot";
-import "CLI.oot";
+pub fn docs_spec_file() -> String {
+    return "docs/blackbox.oot";
+}
+
+pub fn docs_title() -> String {
+    return "openOODA Blackbox Execution Flight Recorder and Crash Autopsy Subsystem";
+}

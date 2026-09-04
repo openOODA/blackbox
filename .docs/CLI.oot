@@ -1,8 +1,0 @@
-# Blackbox CLI Reference
-File: blackbox/.docs/CLI.oot
-
-## Commands
-
-- `blackbox autopsy [path]`: parse crash telemetry.
-- `blackbox diff <file.oo>`: diff compiler AST passes.
-- `blackbox trace`: dump flight event ring buffer.

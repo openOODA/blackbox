@@ -10,8 +10,6 @@
 //   3. Generate human-readable and agent-readable root cause explanations.
 //   4. Emit 1-turn prescriptive remediation actions for AI agent consumption.
 
-import "coordinate_locator.oo";
-
 pub fn root_cause_null_ptr() -> String { return "NULL_POINTER_DEREFERENCE"; }
 pub fn root_cause_cap_trap() -> String { return "CAPABILITY_TRAP_VIOLATION"; }
 pub fn root_cause_unhandled_signal() -> String { return "UNHANDLED_SIGNAL"; }
@@ -83,20 +81,15 @@ pub fn root_cause_description(cause: String, addr: String) -> String {
     return "Unhandled signal interrupted process execution.";
 }
 
-pub fn root_cause_remediation(cause: String, coord: FailureCoordinate) -> String {
-    let fp: String = coord.file_path;
-    let ln: Int = coord.line_num;
-    let s_ln: String = ln.to_string();
-    let fnm: String = coord.fn_name;
-
+pub fn root_cause_remediation(cause: String, coord_str: String) -> String {
     if cause == "NULL_POINTER_DEREFERENCE" {
-        return "Add a null-check guard `if ptr == 0 { return Err(\"null arena\"); }` at " + fp + ":" + s_ln + " before accessing struct fields.";
+        return "Add a null-check guard `if ptr == 0 { return Err(\"null arena\"); }` at " + coord_str + " before accessing struct fields.";
     }
     if cause == "CAPABILITY_TRAP_VIOLATION" {
-        return "Grant the required capability token in " + fnm + " signature or verify capability attenuation bounds at " + fp + ":" + s_ln + ".";
+        return "Grant the required capability token in caller signature or verify capability attenuation bounds at " + coord_str + ".";
     }
     if cause == "ABORT_TRIGGERED" {
-        return "Verify contract invariants and assertion preconditions at " + fp + ":" + s_ln + ".";
+        return "Verify contract invariants and assertion preconditions at " + coord_str + ".";
     }
-    return "Inspect call stack and add defensive boundary validation at " + fp + ":" + s_ln + ".";
+    return "Inspect call stack and add defensive boundary validation at " + coord_str + ".";
 }

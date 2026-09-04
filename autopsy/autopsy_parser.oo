@@ -205,7 +205,7 @@ pub fn autopsy_parse(json: String) -> Result[AutopsyData, String] {
     let mut remed: String = autopsy_json_str(json, "remediation");
     if chars_len(remed) == 0 {
         let coord: FailureCoordinate = coordinate_parse(coord_raw);
-        remed = root_cause_remediation(rc, coord);
+        let s_coord: String = coordinate_format(coord); remed = root_cause_remediation(rc, s_coord);
     }
     let rip: String = autopsy_json_str(json, "rip");
     let rsp: String = autopsy_json_str(json, "rsp");

@@ -1,18 +1,18 @@
-// # Blackbox Subsystem — Canonical ANCHOR Entry
+// # Blackbox Subsystem — Anchor for Agents
 //
-// Logline: Root entry point for the blackbox execution flight recorder and crash autopsy subsystem.
+// Logline: Front door for the blackbox/ directory. Flight recorder, crash autopsy engine, and AST diff toolchain.
 //
-// Setup: Re-exports all public subdirectories. Maintains <= 256 lines ceiling.
+// Setup: Eight subsystem directories. Version is 0.1.0 in VERSION and blackbox_version().
 //
 // Beats:
-//   1. record/ — Telemetry schemas and in-memory ring buffer.
-//   2. autopsy/ — Crash report parser and root cause classifier.
-//   3. diff/ — AST pass diffing engine for oodac stages.
-//   4. bridge/ — Capability process runner and directory watcher.
-//   5. cli/ — Subcommand router and entry point.
-//   6. qa/ — Adversarial verification and double-run proofs.
-//   7. scripts/ — Build, test, and verification automation.
-//   8. docs/ — Subsystem documentation and manual.
+//   1. record/ provides telemetry schemas, flight event records, and ring buffers.
+//   2. autopsy/ provides crash parsing, coordinate location, and root-cause classification.
+//   3. diff/ provides compiler stage invocation and semantic AST diffing.
+//   4. bridge/ provides ProcessCap process runners, directory watchers, and MCP bindings.
+//   5. cli/ provides command line dispatch for autopsy, diff, and trace.
+//   6. qa/ provides crash verification proofs and double-run determinism tests.
+//   7. scripts/ provides build, test, and surface verification automation.
+//   8. docs/ provides ASD-STE100 subsystem specification.
 
 import "record/ANCHOR.oo";
 import "autopsy/ANCHOR.oo";
@@ -23,6 +23,6 @@ import "qa/ANCHOR.oo";
 import "scripts/ANCHOR.oo";
 import "docs/ANCHOR.oo";
 
-pub fn blackbox_subsystem_version() -> String {
+pub fn blackbox_version() -> String {
     return "0.1.0";
 }
