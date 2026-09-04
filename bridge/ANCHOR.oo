@@ -1,0 +1,14 @@
+// # Blackbox Bridge Subsystem Front Door
+//
+// Logline: Re-exports process runner, directory watcher, and Model Context Protocol bindings.
+//
+// Setup: Interfaces blackbox flight sensors with external processes and AI agent tool ecosystems.
+//
+// Beats:
+//   1. Re-export ProcessCap process execution and tracing runner.
+//   2. Re-export filesystem directory watcher for crash artifacts.
+//   3. Re-export MCP tool catalog bindings and invocation dispatch.
+
+import "process_runner.oo";
+import "dir_watcher.oo";
+import "mcp_bridge.oo";

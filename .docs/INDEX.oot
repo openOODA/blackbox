@@ -1,0 +1,11 @@
+# Blackbox Subsystem Specification
+File: blackbox/.docs/INDEX.oot
+
+The blackbox subsystem provides execution flight recording, crash telemetry,
+and compiler AST diffing for openOODA.
+
+## Principles
+
+1. Zero Ambient Authority: telemetry uses explicit ProcessCap.
+2. Zero Heap on Crash: crash sensor writes via stack buffer without memory allocation.
+3. 1-Turn Agent Diagnosis: compact autopsy reports designed for LLM harnesses.

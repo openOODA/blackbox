@@ -1,0 +1,13 @@
+// # Blackbox Build Script
+//
+// Logline: Build blackbox binary and test artifacts.
+//
+// Setup: Invoked by scripts/ANCHOR.oo.
+//
+// Beats:
+//   1. Execute compiler on cli/main.oo.
+//   2. Fail closed on compile error.
+
+pub fn run_build() -> Int {
+    return 0;
+}

@@ -1,0 +1,79 @@
+// # Double-Run Invariant Proof
+//
+// Logline: Proves that repeated diagnostic evaluations on identical inputs produce byte-identical results.
+//
+// Setup: Double-Run Invariant verification (Run1 == Run2). Fails closed on any non-deterministic drift.
+//
+// Beats:
+//   1. Execute first run of autopsy JSON diagnostic report generation.
+//   2. Execute second run of autopsy JSON diagnostic report generation on identical input.
+//   3. Assert byte-identical equality across both output reports.
+//   4. Assert determinism across AST semantic diffing and telemetry serialization.
+
+import "autopsy/report_formatter.oo";
+import "diff/ast_diff.oo";
+import "record/event_record.oo";
+import "crash_fixture_proof.oo";
+
+pub fn proof_double_run_autopsy() -> Result[Int, String] {
+    let json: String = crash_fixture_null_ptr_json();
+
+    let r1: Result[String, String] = autopsy_format_from_json(json);
+    if r1.is_err() {
+        return Err("proof_double_run_autopsy: run 1 failed: " + r1.unwrap_err());
+    }
+
+    let r2: Result[String, String] = autopsy_format_from_json(json);
+    if r2.is_err() {
+        return Err("proof_double_run_autopsy: run 2 failed: " + r2.unwrap_err());
+    }
+
+    let rep1: String = r1.unwrap();
+    let rep2: String = r2.unwrap();
+
+    if rep1 != rep2 {
+        return Err("double-run invariant violation: autopsy output drifted between runs");
+    }
+
+    return Ok(0);
+}
+
+pub fn proof_double_run_diff() -> Result[Int, String] {
+    let ast_a: String = "PROGRAM\n  ITEM[0] FN name=foo pub=true ret=Int @1:1\n";
+    let ast_b: String = "PROGRAM\n  ITEM[0] FN name=foo pub=true ret=Int @1:1\n  ITEM[1] FN name=bar pub=true ret=Int @5:1\n";
+
+    let diff1: String = ast_diff_compare_texts(ast_a, ast_b);
+    let diff2: String = ast_diff_compare_texts(ast_a, ast_b);
+
+    if diff1 != diff2 {
+        return Err("double-run invariant violation: ast diff drifted between runs");
+    }
+
+    return Ok(0);
+}
+
+pub fn proof_double_run_telemetry() -> Result[Int, String] {
+    let ev: EventRecord = event_record_new(42, 3, 2, "test event detail", 1700000000);
+
+    let j1: String = event_record_to_json(ev);
+    let j2: String = event_record_to_json(ev);
+
+    if j1 != j2 {
+        return Err("double-run invariant violation: event telemetry serialization drifted");
+    }
+
+    return Ok(0);
+}
+
+pub fn double_run_proof_run() -> Result[Int, String] {
+    let r_a: Result[Int, String] = proof_double_run_autopsy();
+    if r_a.is_err() { return r_a; }
+
+    let r_d: Result[Int, String] = proof_double_run_diff();
+    if r_d.is_err() { return r_d; }
+
+    let r_t: Result[Int, String] = proof_double_run_telemetry();
+    if r_t.is_err() { return r_t; }
+
+    return Ok(0);
+}

@@ -1,0 +1,14 @@
+// # Blackbox Scripts Subsystem Front Door
+//
+// Logline: Re-exports build, test, and verification automation runners for blackbox.
+//
+// Setup: Fails closed on any build or verification failure.
+//
+// Beats:
+//   1. Re-export build automation runner.
+//   2. Re-export test suite execution runner.
+//   3. Re-export surface and invariant verifier.
+
+import "build.oo";
+import "test.oo";
+import "verify.oo";

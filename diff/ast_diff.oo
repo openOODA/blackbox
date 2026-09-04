@@ -1,0 +1,109 @@
+// # Semantic AST Diffing Engine
+//
+// Logline: Computes semantic structural AST differences across source revisions or compiler passes.
+//
+// Setup: Relies on compiler_runner under ProcessCap. Suppresses whitespace-only churn.
+//
+// Beats:
+//   1. Split AST and token outputs into structured line collections.
+//   2. Compare item signatures across AST versions.
+//   3. Format hierarchical diff blocks with added, removed, and retained nodes.
+//   4. Coordinate invocation of oodac ast on file targets.
+
+import "compiler_runner.oo";
+
+pub fn ast_diff_split_lines(text: String) -> List[String] {
+    let n: Int = chars_len(text);
+    let mut lines: List[String] = list_new();
+    let mut cur: String = "";
+    let mut i: Int = 0;
+    while i < n {
+        let c: String = char_at(text, i);
+        if c == "\n" {
+            lines = list_push(lines, cur);
+            cur = "";
+        } else {
+            if c != "\r" {
+                cur = cur + c;
+            }
+        }
+        i = i + 1;
+    }
+    if chars_len(cur) > 0 {
+        lines = list_push(lines, cur);
+    }
+    return lines;
+}
+
+fn ast_diff_list_contains(lines: List[String], target: String) -> Bool {
+    let n: Int = list_len(lines);
+    let mut i: Int = 0;
+    while i < n {
+        let l: String = list_get(lines, i);
+        if l == target { return true; }
+        i = i + 1;
+    }
+    return false;
+}
+
+pub fn ast_diff_compare_texts(ast_before: String, ast_after: String) -> String {
+    if ast_before == ast_after {
+        return "=== BLACKBOX SEMANTIC AST DIFF ===\nStatus: Identical (zero semantic AST drift detected)\n==================================";
+    }
+
+    let b_lines: List[String] = ast_diff_split_lines(ast_before);
+    let a_lines: List[String] = ast_diff_split_lines(ast_after);
+
+    let mut out: String = "=== BLACKBOX SEMANTIC AST DIFF ===\n";
+    let mut changes: Int = 0;
+
+    let n_b: Int = list_len(b_lines);
+    let mut i: Int = 0;
+    while i < n_b {
+        let line: String = list_get(b_lines, i);
+        if chars_len(line) > 0 {
+            if !ast_diff_list_contains(a_lines, line) {
+                out = out + "- " + line + "\n";
+                changes = changes + 1;
+            }
+        }
+        i = i + 1;
+    }
+
+    let n_a: Int = list_len(a_lines);
+    let mut j: Int = 0;
+    while j < n_a {
+        let line: String = list_get(a_lines, j);
+        if chars_len(line) > 0 {
+            if !ast_diff_list_contains(b_lines, line) {
+                out = out + "+ " + line + "\n";
+                changes = changes + 1;
+            }
+        }
+        j = j + 1;
+    }
+
+    let s_ch: String = changes.to_string();
+    out = out + "Summary: " + s_ch + " semantic changes\n";
+    out = out + "==================================";
+    return out;
+}
+
+pub fn ast_diff_compare_files(&p: ProcessCap, bin: String, file_b: String, file_a: String) -> Result[String, String] {
+    let rb: Result[String, String] = compiler_run_ast(p, bin, file_b);
+    if rb.is_err() { return rb; }
+    let ra: Result[String, String] = compiler_run_ast(p, bin, file_a);
+    if ra.is_err() { return ra; }
+    return Ok(ast_diff_compare_texts(rb.unwrap(), ra.unwrap()));
+}
+
+pub fn ast_diff_inspect_file(&p: ProcessCap, bin: String, file: String) -> Result[String, String] {
+    let r: Result[String, String] = compiler_run_ast(p, bin, file);
+    if r.is_err() { return r; }
+    let raw: String = r.unwrap();
+    let mut out: String = "=== BLACKBOX AST INSPECTION ===\n";
+    out = out + "File: " + file + "\n\n";
+    out = out + raw + "\n";
+    out = out + "===============================";
+    return Ok(out);
+}

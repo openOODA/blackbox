@@ -1,0 +1,12 @@
+// # Blackbox .docs — Hidden Documentation Root
+//
+// Logline: Documentation root for tools and LLM harnesses referencing .docs.
+//
+// Setup: Mirror of subsystem documentation for agent workflows.
+//
+// Beats:
+//   1. INDEX.oot — Blackbox architecture and reference manual.
+//   2. CLI.oot — Blackbox command line interface.
+
+import "INDEX.oot";
+import "CLI.oot";

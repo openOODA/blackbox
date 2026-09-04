@@ -1,0 +1,96 @@
+// # In-Memory Telemetry Ring Buffer
+//
+// Logline: Manages a fixed-capacity circular buffer storing execution flight event records.
+//
+// Setup: Bound capacity to avoid unbounded memory growth. Overwrites oldest events.
+//
+// Beats:
+//   1. Declare RingBuffer struct fields.
+//   2. Create empty buffer with specified slot capacity.
+//   3. Push new event record into circular buffer.
+//   4. Export buffer contents to serialized JSON array.
+
+import "event_record.oo";
+
+type RingBuffer = struct {
+    capacity: Int,
+    count: Int,
+    head: Int,
+    events: List[EventRecord]
+};
+
+pub fn ring_buffer_new(capacity: Int) -> RingBuffer {
+    let cap: Int = if capacity > 0 { capacity } else { 64 };
+    return RingBuffer {
+        capacity: cap,
+        count: 0,
+        head: 0,
+        events: list_new()
+    };
+}
+
+pub fn ring_buffer_push(buf: RingBuffer, ev: EventRecord) -> RingBuffer {
+    let mut evs: List[EventRecord] = buf.events;
+    let cap: Int = buf.capacity;
+    let cnt: Int = buf.count;
+    let hd: Int = buf.head;
+
+    if list_len(evs) < cap {
+        evs = list_push(evs, ev);
+        let new_cnt: Int = cnt + 1;
+        let new_hd: Int = (hd + 1) % cap;
+        return RingBuffer {
+            capacity: cap,
+            count: new_cnt,
+            head: new_hd,
+            events: evs
+        };
+    }
+
+    let mut new_list: List[EventRecord] = list_new();
+    let mut i: Int = 1;
+    while i < list_len(evs) {
+        let item: EventRecord = list_get(evs, i);
+        new_list = list_push(new_list, item);
+        i = i + 1;
+    }
+    new_list = list_push(new_list, ev);
+
+    let next_hd: Int = (hd + 1) % cap;
+    return RingBuffer {
+        capacity: cap,
+        count: cap,
+        head: next_hd,
+        events: new_list
+    };
+}
+
+pub fn ring_buffer_to_json(buf: RingBuffer) -> String {
+    let evs: List[EventRecord] = buf.events;
+    let n: Int = list_len(evs);
+    let mut out: String = "[";
+    let mut i: Int = 0;
+    while i < n {
+        let ev: EventRecord = list_get(evs, i);
+        if i > 0 {
+            out = out + ",";
+        }
+        out = out + event_record_to_json(ev);
+        i = i + 1;
+    }
+    out = out + "]";
+    return out;
+}
+
+pub fn ring_buffer_summary(buf: RingBuffer) -> String {
+    let evs: List[EventRecord] = buf.events;
+    let n: Int = list_len(evs);
+    let mut out: String = "Flight Telemetry Buffer (" + n.to_string() + " events):\n";
+    let mut i: Int = 0;
+    while i < n {
+        let ev: EventRecord = list_get(evs, i);
+        out = out + "  " + event_record_format(ev) + "\n";
+        i = i + 1;
+    }
+    return out;
+}

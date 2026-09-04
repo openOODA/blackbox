@@ -1,0 +1,13 @@
+// # Blackbox QA Subsystem Front Door
+//
+// Logline: Re-exports hostile crash fixtures and double-run invariant proofs for the blackbox subsystem.
+//
+// Setup: Fails closed on any parse failure, classification defect, or output drift.
+//
+// Beats:
+//   1. Re-export crash fixture verification proofs.
+//   2. Re-export double-run determinism invariant proofs.
+//   3. Provide package self-test drivers.
+
+import "crash_fixture_proof.oo";
+import "double_run_proof.oo";

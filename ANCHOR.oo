@@ -1,0 +1,28 @@
+// # Blackbox Subsystem — Canonical ANCHOR Entry
+//
+// Logline: Root entry point for the blackbox execution flight recorder and crash autopsy subsystem.
+//
+// Setup: Re-exports all public subdirectories. Maintains <= 256 lines ceiling.
+//
+// Beats:
+//   1. record/ — Telemetry schemas and in-memory ring buffer.
+//   2. autopsy/ — Crash report parser and root cause classifier.
+//   3. diff/ — AST pass diffing engine for oodac stages.
+//   4. bridge/ — Capability process runner and directory watcher.
+//   5. cli/ — Subcommand router and entry point.
+//   6. qa/ — Adversarial verification and double-run proofs.
+//   7. scripts/ — Build, test, and verification automation.
+//   8. docs/ — Subsystem documentation and manual.
+
+import "record/ANCHOR.oo";
+import "autopsy/ANCHOR.oo";
+import "diff/ANCHOR.oo";
+import "bridge/ANCHOR.oo";
+import "cli/ANCHOR.oo";
+import "qa/ANCHOR.oo";
+import "scripts/ANCHOR.oo";
+import "docs/ANCHOR.oo";
+
+pub fn blackbox_subsystem_version() -> String {
+    return "0.1.0";
+}

@@ -1,0 +1,45 @@
+// # Blackbox Test Runner
+//
+// Logline: Executes crash fixture proofs, double-run determinism checks, and surface verifiers.
+//
+// Setup: Fails closed on any test failure or invariant violation. Zero dummy assertions.
+//
+// Beats:
+//   1. Run surface verification of tool schemas and telemetry codes.
+//   2. Run crash fixture parsing and classification proofs.
+//   3. Run double-run determinism invariant proofs.
+//   4. Print success status and return 0.
+
+import "verify.oo";
+import "qa/crash_fixture_proof.oo";
+import "qa/double_run_proof.oo";
+
+pub fn test_run_all() -> Result[Int, String] {
+    let r_surf: Result[Int, String] = verify_surface();
+    if r_surf.is_err() {
+        return Err("test: surface verification failed: " + r_surf.unwrap_err());
+    }
+
+    let r_crash: Result[Int, String] = crash_fixture_proof_run();
+    if r_crash.is_err() {
+        return Err("test: crash fixture proof failed: " + r_crash.unwrap_err());
+    }
+
+    let r_dbl: Result[Int, String] = double_run_proof_run();
+    if r_dbl.is_err() {
+        return Err("test: double-run proof failed: " + r_dbl.unwrap_err());
+    }
+
+    return Ok(0);
+}
+
+pub fn main(&p: ProcessCap, &fs: FsReadCap, &fw: FsWriteCap, &env: EnvCap, args: List[String]) -> Result[Int, String] {
+    println("test: starting blackbox test suite...");
+    let res: Result[Int, String] = test_run_all();
+    if res.is_err() {
+        println("ERR test failed: " + res.unwrap_err());
+        return res;
+    }
+    println("test: all blackbox proofs + surface verifications passed");
+    return Ok(0);
+}

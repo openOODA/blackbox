@@ -1,0 +1,57 @@
+// # Telemetry Schema Specification
+//
+// Logline: Defines flight event type codes and phase constants for execution telemetry.
+//
+// Setup: Pure type definitions and code mapping. No heap allocation required.
+//
+// Beats:
+//   1. Define event type constants from 1 to 6.
+//   2. Map event type integers to canonical string names.
+//   3. Map canonical string names back to event type integers.
+//   4. Define flight phase identifiers.
+
+pub fn event_type_phase_change() -> Int { return 1; }
+pub fn event_type_cap_require() -> Int { return 2; }
+pub fn event_type_ast_node() -> Int { return 3; }
+pub fn event_type_arena_mark() -> Int { return 4; }
+pub fn event_type_io_dispatch() -> Int { return 5; }
+pub fn event_type_trap_signal() -> Int { return 6; }
+
+pub fn event_type_to_name(t: Int) -> String {
+    if t == 1 { return "PHASE_CHANGE"; }
+    if t == 2 { return "CAP_REQUIRE"; }
+    if t == 3 { return "AST_NODE"; }
+    if t == 4 { return "ARENA_MARK"; }
+    if t == 5 { return "IO_DISPATCH"; }
+    if t == 6 { return "TRAP_SIGNAL"; }
+    return "UNKNOWN_EVENT";
+}
+
+pub fn event_type_from_name(name: String) -> Int {
+    if name == "PHASE_CHANGE" { return 1; }
+    if name == "CAP_REQUIRE" { return 2; }
+    if name == "AST_NODE" { return 3; }
+    if name == "ARENA_MARK" { return 4; }
+    if name == "IO_DISPATCH" { return 5; }
+    if name == "TRAP_SIGNAL" { return 6; }
+    return 0;
+}
+
+pub fn phase_id_init() -> Int { return 1; }
+pub fn phase_id_lex() -> Int { return 2; }
+pub fn phase_id_parse() -> Int { return 3; }
+pub fn phase_id_typecheck() -> Int { return 4; }
+pub fn phase_id_codegen() -> Int { return 5; }
+pub fn phase_id_runtime() -> Int { return 6; }
+pub fn phase_id_shutdown() -> Int { return 7; }
+
+pub fn phase_to_name(p: Int) -> String {
+    if p == 1 { return "INIT"; }
+    if p == 2 { return "LEX"; }
+    if p == 3 { return "PARSE"; }
+    if p == 4 { return "TYPECHECK"; }
+    if p == 5 { return "CODEGEN"; }
+    if p == 6 { return "RUNTIME"; }
+    if p == 7 { return "SHUTDOWN"; }
+    return "UNKNOWN_PHASE";
+}

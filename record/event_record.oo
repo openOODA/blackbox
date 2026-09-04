@@ -1,0 +1,58 @@
+// # Event Record Representation
+//
+// Logline: Represents individual flight telemetry events recorded during process execution.
+//
+// Setup: Relies on telemetry schema codes. Serializes to compact JSON.
+//
+// Beats:
+//   1. Declare EventRecord struct fields.
+//   2. Provide structural constructor event_record_new.
+//   3. Provide JSON serialization event_record_to_json.
+//   4. Provide formatted diagnostic string representation.
+
+import "telemetry_schema.oo";
+
+type EventRecord = struct {
+    seq: Int,
+    phase: Int,
+    event_type: Int,
+    detail: String,
+    timestamp: Int
+};
+
+pub fn event_record_new(seq: Int, phase: Int, event_type: Int, detail: String, timestamp: Int) -> EventRecord {
+    return EventRecord {
+        seq: seq,
+        phase: phase,
+        event_type: event_type,
+        detail: detail,
+        timestamp: timestamp
+    };
+}
+
+pub fn event_record_to_json(r: EventRecord) -> String {
+    let seq_num: Int = r.seq;
+    let s_seq: String = seq_num.to_string();
+    let phase_num: Int = r.phase;
+    let s_phase: String = phase_num.to_string();
+    let type_num: Int = r.event_type;
+    let s_type: String = type_num.to_string();
+    let time_num: Int = r.timestamp;
+    let s_time: String = time_num.to_string();
+    let mut out: String = "{";
+    out = out + "\"seq\":" + s_seq + ",";
+    out = out + "\"phase\":" + s_phase + ",";
+    out = out + "\"type\":" + s_type + ",";
+    out = out + "\"detail\":\"" + r.detail + "\",";
+    out = out + "\"timestamp\":" + s_time + "}";
+    return out;
+}
+
+pub fn event_record_format(r: EventRecord) -> String {
+    let seq_num: Int = r.seq;
+    let s_seq: String = seq_num.to_string();
+    let p_name: String = phase_to_name(r.phase);
+    let t_name: String = event_type_to_name(r.event_type);
+    let d: String = r.detail;
+    return "[" + s_seq + "] " + p_name + "::" + t_name + " - " + d;
+}

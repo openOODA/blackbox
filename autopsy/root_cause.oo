@@ -1,0 +1,102 @@
+// # Root Cause Classifier
+//
+// Logline: Classifies crash signals and capability traps into canonical failure modes and remediations.
+//
+// Setup: Maps substrate signals, trapped capability flags, and fault addresses into root causes.
+//
+// Beats:
+//   1. Classify crash signal and fault address into canonical root cause tokens.
+//   2. Map signal numbers to POSIX signal names and friendly descriptions.
+//   3. Generate human-readable and agent-readable root cause explanations.
+//   4. Emit 1-turn prescriptive remediation actions for AI agent consumption.
+
+import "coordinate_locator.oo";
+
+pub fn root_cause_null_ptr() -> String { return "NULL_POINTER_DEREFERENCE"; }
+pub fn root_cause_cap_trap() -> String { return "CAPABILITY_TRAP_VIOLATION"; }
+pub fn root_cause_unhandled_signal() -> String { return "UNHANDLED_SIGNAL"; }
+pub fn root_cause_abort() -> String { return "ABORT_TRIGGERED"; }
+pub fn root_cause_bus_error() -> String { return "BUS_ERROR"; }
+pub fn root_cause_illegal_instr() -> String { return "ILLEGAL_INSTRUCTION"; }
+pub fn root_cause_div_zero() -> String { return "DIVIDE_BY_ZERO"; }
+
+pub fn root_cause_classify(sig: Int, addr: String, cap_trapped: Bool, detail: String) -> String {
+    if cap_trapped {
+        return root_cause_cap_trap();
+    }
+    if sig == 11 {
+        return root_cause_null_ptr();
+    }
+    if sig == 6 {
+        return root_cause_abort();
+    }
+    if sig == 7 {
+        return root_cause_bus_error();
+    }
+    if sig == 4 {
+        return root_cause_illegal_instr();
+    }
+    if sig == 8 {
+        return root_cause_div_zero();
+    }
+    return root_cause_unhandled_signal();
+}
+
+pub fn root_cause_signal_name(sig: Int) -> String {
+    if sig == 11 { return "SIGSEGV"; }
+    if sig == 6 { return "SIGABRT"; }
+    if sig == 7 { return "SIGBUS"; }
+    if sig == 4 { return "SIGILL"; }
+    if sig == 8 { return "SIGFPE"; }
+    let s_sig: String = sig.to_string();
+    return "SIGNAL_" + s_sig;
+}
+
+pub fn root_cause_signal_desc(sig: Int) -> String {
+    if sig == 11 { return "Segmentation fault"; }
+    if sig == 6 { return "Aborted"; }
+    if sig == 7 { return "Bus error"; }
+    if sig == 4 { return "Illegal instruction"; }
+    if sig == 8 { return "Floating point exception"; }
+    return "Unhandled signal";
+}
+
+pub fn root_cause_description(cause: String, addr: String) -> String {
+    if cause == "NULL_POINTER_DEREFERENCE" {
+        return "Unhandled dereference of null pointer at memory address " + addr + ".";
+    }
+    if cause == "CAPABILITY_TRAP_VIOLATION" {
+        return "Execution attempted ungranted capability access without holding required capability token.";
+    }
+    if cause == "ABORT_TRIGGERED" {
+        return "Process called abort() following unrecoverable contract violation or failed assertion.";
+    }
+    if cause == "BUS_ERROR" {
+        return "Non-existent physical address access or misaligned memory access at " + addr + ".";
+    }
+    if cause == "ILLEGAL_INSTRUCTION" {
+        return "CPU attempted to decode an invalid, privileged, or malformed instruction opcode.";
+    }
+    if cause == "DIVIDE_BY_ZERO" {
+        return "Integer division by zero encountered during arithmetic operation.";
+    }
+    return "Unhandled signal interrupted process execution.";
+}
+
+pub fn root_cause_remediation(cause: String, coord: FailureCoordinate) -> String {
+    let fp: String = coord.file_path;
+    let ln: Int = coord.line_num;
+    let s_ln: String = ln.to_string();
+    let fnm: String = coord.fn_name;
+
+    if cause == "NULL_POINTER_DEREFERENCE" {
+        return "Add a null-check guard `if ptr == 0 { return Err(\"null arena\"); }` at " + fp + ":" + s_ln + " before accessing struct fields.";
+    }
+    if cause == "CAPABILITY_TRAP_VIOLATION" {
+        return "Grant the required capability token in " + fnm + " signature or verify capability attenuation bounds at " + fp + ":" + s_ln + ".";
+    }
+    if cause == "ABORT_TRIGGERED" {
+        return "Verify contract invariants and assertion preconditions at " + fp + ":" + s_ln + ".";
+    }
+    return "Inspect call stack and add defensive boundary validation at " + fp + ":" + s_ln + ".";
+}

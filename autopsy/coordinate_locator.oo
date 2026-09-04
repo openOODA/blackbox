@@ -1,0 +1,118 @@
+// # Failure Coordinate Locator
+//
+// Logline: Parses and formats source failure coordinates into structured source locations.
+//
+// Setup: Pure string scanning. Handles colon-delimited coordinates file:line:col:fn.
+//
+// Beats:
+//   1. Declare FailureCoordinate struct fields.
+//   2. Parse raw coordinate string into file, line, col, and function name.
+//   3. Format FailureCoordinate into agent-friendly presentation string.
+//   4. Validate whether a coordinate contains valid non-empty file and line values.
+
+type FailureCoordinate = struct {
+    file_path: String,
+    line_num: Int,
+    col_num: Int,
+    fn_name: String
+};
+
+pub fn coordinate_new(file_path: String, line_num: Int, col_num: Int, fn_name: String) -> FailureCoordinate {
+    return FailureCoordinate {
+        file_path: file_path,
+        line_num: line_num,
+        col_num: col_num,
+        fn_name: fn_name
+    };
+}
+
+fn coordinate_is_digit(c: String) -> Bool {
+    return c == "0" || c == "1" || c == "2" || c == "3" || c == "4" ||
+           c == "5" || c == "6" || c == "7" || c == "8" || c == "9";
+}
+
+fn coordinate_parse_int(s: String) -> Int {
+    let n: Int = chars_len(s);
+    let mut val: Int = 0;
+    let mut i: Int = 0;
+    while i < n {
+        let c: String = char_at(s, i);
+        if !coordinate_is_digit(c) { break; }
+        let d: Int = if c == "0" { 0 } else if c == "1" { 1 } else if c == "2" { 2 }
+                     else if c == "3" { 3 } else if c == "4" { 4 } else if c == "5" { 5 }
+                     else if c == "6" { 6 } else if c == "7" { 7 } else if c == "8" { 8 } else { 9 };
+        val = val * 10 + d;
+        i = i + 1;
+    }
+    return val;
+}
+
+pub fn coordinate_parse(raw: String) -> FailureCoordinate {
+    let n: Int = chars_len(raw);
+    if n == 0 {
+        return coordinate_new("unknown", 0, 0, "unknown");
+    }
+
+    let mut parts: List[String] = list_new();
+    let mut cur: String = "";
+    let mut i: Int = 0;
+    while i < n {
+        let c: String = char_at(raw, i);
+        if c == ":" {
+            parts = list_push(parts, cur);
+            cur = "";
+        } else {
+            cur = cur + c;
+        }
+        i = i + 1;
+    }
+    parts = list_push(parts, cur);
+
+    let num_parts: Int = list_len(parts);
+    if num_parts >= 4 {
+        let fp: String = list_get(parts, 0);
+        let ln: Int = coordinate_parse_int(list_get(parts, 1));
+        let col: Int = coordinate_parse_int(list_get(parts, 2));
+        let fnm: String = list_get(parts, 3);
+        return coordinate_new(fp, ln, col, fnm);
+    }
+    if num_parts == 3 {
+        let fp: String = list_get(parts, 0);
+        let ln: Int = coordinate_parse_int(list_get(parts, 1));
+        let fnm: String = list_get(parts, 2);
+        return coordinate_new(fp, ln, 0, fnm);
+    }
+    if num_parts == 2 {
+        let fp: String = list_get(parts, 0);
+        let ln: Int = coordinate_parse_int(list_get(parts, 1));
+        return coordinate_new(fp, ln, 0, "main");
+    }
+
+    return coordinate_new(raw, 0, 0, "main");
+}
+
+pub fn coordinate_format(c: FailureCoordinate) -> String {
+    let fp: String = c.file_path;
+    let ln: Int = c.line_num;
+    let s_ln: String = ln.to_string();
+    let fnm: String = c.fn_name;
+    if chars_len(fnm) > 0 {
+        if fnm != "unknown" {
+            return fp + ":" + s_ln + " in " + fnm + "()";
+        }
+    }
+    return fp + ":" + s_ln;
+}
+
+pub fn coordinate_is_valid(c: FailureCoordinate) -> Bool {
+    let fp: String = c.file_path;
+    let ln: Int = c.line_num;
+    if chars_len(fp) > 0 {
+        if fp != "unknown" {
+            if ln > 0 {
+                return true;
+            }
+        }
+    }
+    return false;
+}

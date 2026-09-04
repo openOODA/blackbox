@@ -1,0 +1,80 @@
+// # Crash Autopsy Report Formatter
+//
+// Logline: Formats crash autopsy data into compact 1-turn agent diagnostics and human-readable summaries.
+//
+// Setup: Consumes parsed AutopsyData. Emits deterministic report blocks.
+//
+// Beats:
+//   1. Format banner, signal name, and code.
+//   2. Format failure coordinate, root cause, and description.
+//   3. Format call stack frames, CPU registers, and capability state.
+//   4. Emit 1-turn prescriptive agent action and footer.
+
+import "coordinate_locator.oo";
+import "root_cause.oo";
+import "autopsy_parser.oo";
+
+pub fn autopsy_format_report(data: AutopsyData) -> String {
+    let sig: Int = data.crash_signal;
+    let s_sig: String = sig.to_string();
+    let s_desc: String = root_cause_signal_desc(sig);
+    let coord: FailureCoordinate = coordinate_parse(data.failure_coordinate);
+    let s_coord: String = coordinate_format(coord);
+
+    let mut out: String = "=== BLACKBOX CRASH AUTOPSY ===\n";
+    out = out + "Signal: " + data.signal_name + " (" + s_sig + ") - " + s_desc + "\n";
+    out = out + "Fault Address: " + data.fault_address + "\n";
+    out = out + "Failure Coordinate: " + s_coord + "\n";
+    out = out + "Root Cause: " + data.root_cause + "\n";
+    out = out + "Description: " + data.description + "\n\n";
+
+    out = out + "Backtrace:\n";
+    let bt: List[AutopsyStackFrame] = data.backtrace;
+    let n_bt: Int = list_len(bt);
+    let mut i: Int = 0;
+    while i < n_bt {
+        let f: AutopsyStackFrame = list_get(bt, i);
+        let f_num: Int = f.frame_num;
+        let s_fnum: String = f_num.to_string();
+        out = out + "  #" + s_fnum + " " + f.address + " in " + f.symbol + "() at " + f.location + "\n";
+        i = i + 1;
+    }
+    out = out + "\n";
+
+    out = out + "Registers:\n";
+    out = out + "  RIP: " + data.registers_rip + "  RSP: " + data.registers_rsp + "  RBP: " + data.registers_rbp + "\n\n";
+
+    out = out + "Capability State:\n";
+    let s_trap: String = if data.cap_trapped { "true" } else { "false" };
+    out = out + "  Trapped: " + s_trap + "\n";
+    out = out + "  Granted Caps: [";
+    let caps: List[String] = data.granted_caps;
+    let n_caps: Int = list_len(caps);
+    let mut j: Int = 0;
+    while j < n_caps {
+        if j > 0 { out = out + ", "; }
+        out = out + list_get(caps, j);
+        j = j + 1;
+    }
+    out = out + "]\n\n";
+
+    out = out + "1-Turn Agent Action:\n";
+    out = out + "  " + data.remediation + "\n";
+    out = out + "==============================";
+    return out;
+}
+
+pub fn autopsy_format_compact(data: AutopsyData) -> String {
+    let sig: Int = data.crash_signal;
+    let s_sig: String = sig.to_string();
+    return "[" + data.signal_name + ":" + s_sig + "] " + data.root_cause + " at " + data.failure_coordinate + " -> " + data.remediation;
+}
+
+pub fn autopsy_format_from_json(json: String) -> Result[String, String] {
+    let res: Result[AutopsyData, String] = autopsy_parse(json);
+    if res.is_err() {
+        return Err(res.unwrap_err());
+    }
+    let data: AutopsyData = res.unwrap();
+    return Ok(autopsy_format_report(data));
+}

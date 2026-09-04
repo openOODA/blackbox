@@ -1,0 +1,13 @@
+// # Blackbox Diff Subsystem Front Door
+//
+// Logline: Re-exports compiler stage runner and semantic AST diffing engine.
+//
+// Setup: Bridges oodac stages under ProcessCap to compute semantic changes across AST representations.
+//
+// Beats:
+//   1. Re-export compiler stage execution routines.
+//   2. Re-export AST comparison and semantic diff formatting.
+//   3. Provide single front-door module for compiler introspection.
+
+import "compiler_runner.oo";
+import "ast_diff.oo";

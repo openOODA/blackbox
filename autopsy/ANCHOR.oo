@@ -1,0 +1,16 @@
+// # Blackbox Autopsy Subsystem Front Door
+//
+// Logline: Re-exports crash autopsy parsing, failure coordinate location, and root-cause classification.
+//
+// Setup: Pure analysis and diagnosis pipeline. Generates compact 1-turn agent diagnostic reports.
+//
+// Beats:
+//   1. Re-export source coordinate parsing and locator services.
+//   2. Re-export root-cause classification and remediation mapping.
+//   3. Re-export zero-heap autopsy JSON parsing routines.
+//   4. Re-export diagnostic report formatting engine.
+
+import "coordinate_locator.oo";
+import "root_cause.oo";
+import "autopsy_parser.oo";
+import "report_formatter.oo";

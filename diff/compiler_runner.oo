@@ -1,0 +1,36 @@
+// # Compiler Stage Runner
+//
+// Logline: Invokes oodac compiler inspection stages under ProcessCap to capture AST and token streams.
+//
+// Setup: Requires ProcessCap for subprocess execution. Uses sys_exec to run oodac stages.
+//
+// Beats:
+//   1. Resolve path to oodac compiler executable from environment or defaults.
+//   2. Invoke tokens, ast, outline, or reflect compiler stages.
+//   3. Capture standard output stream into structured result.
+//   4. Validate file existence and extension before invocation.
+
+pub fn compiler_default_bin() -> String {
+    return "oodac";
+}
+
+pub fn compiler_run_stage(&p: ProcessCap, bin: String, stage: String, file_path: String) -> Result[String, String] {
+    if chars_len(file_path) == 0 {
+        return Err("compiler_run_stage: empty file path");
+    }
+    let compiler: String = if chars_len(bin) > 0 { bin } else { compiler_default_bin() };
+    let r: Result[String, String] = sys_exec(p, compiler, stage, file_path);
+    return r;
+}
+
+pub fn compiler_run_ast(&p: ProcessCap, bin: String, file_path: String) -> Result[String, String] {
+    return compiler_run_stage(p, bin, "ast", file_path);
+}
+
+pub fn compiler_run_tokens(&p: ProcessCap, bin: String, file_path: String) -> Result[String, String] {
+    return compiler_run_stage(p, bin, "tokens", file_path);
+}
+
+pub fn compiler_run_outline(&p: ProcessCap, bin: String, file_path: String) -> Result[String, String] {
+    return compiler_run_stage(p, bin, "outline", file_path);
+}

@@ -1,0 +1,117 @@
+// # Crash Fixture Verification Proof
+//
+// Logline: Proves that crash payloads parse accurately and produce correct root-cause classifications.
+//
+// Setup: Pure string fixtures. Proves SIGSEGV null dereferences and capability traps fail closed.
+//
+// Beats:
+//   1. Define canonical crash fixture JSON string literals.
+//   2. Verify SIGSEGV null pointer dereference parsing and coordinate extraction.
+//   3. Verify capability trap interception and classification.
+//   4. Verify formatted diagnostic report completeness.
+
+import "autopsy/autopsy_parser.oo";
+import "autopsy/coordinate_locator.oo";
+import "autopsy/root_cause.oo";
+import "autopsy/report_formatter.oo";
+
+pub fn crash_fixture_null_ptr_json() -> String {
+    let mut out: String = "{\n";
+    out = out + "  \"schema_version\": \"1.0.0\",\n";
+    out = out + "  \"crash_signal\": 11,\n";
+    out = out + "  \"signal_name\": \"SIGSEGV\",\n";
+    out = out + "  \"fault_address\": \"0x0000000000000000\",\n";
+    out = out + "  \"failure_coordinate\": \"core/alloc/arena.oo:42:5:arena_alloc\",\n";
+    out = out + "  \"root_cause\": \"NULL_POINTER_DEREFERENCE\",\n";
+    out = out + "  \"description\": \"Unhandled dereference of null pointer at memory address 0x0.\",\n";
+    out = out + "  \"rip\": \"0x000055555556a1b0\",\n";
+    out = out + "  \"rsp\": \"0x00007fffffffe210\",\n";
+    out = out + "  \"rbp\": \"0x00007fffffffe240\",\n";
+    out = out + "  \"capability_trap\": false,\n";
+    out = out + "  \"remediation\": \"Add a null-check guard `if ptr == 0 { return Err(\\\"null arena\\\"); }` at arena.oo:42 before accessing struct fields.\"\n";
+    out = out + "}";
+    return out;
+}
+
+pub fn crash_fixture_cap_trap_json() -> String {
+    let mut out: String = "{\n";
+    out = out + "  \"schema_version\": \"1.0.0\",\n";
+    out = out + "  \"crash_signal\": 6,\n";
+    out = out + "  \"signal_name\": \"SIGABRT\",\n";
+    out = out + "  \"fault_address\": \"0x0000000000000000\",\n";
+    out = out + "  \"failure_coordinate\": \"sec/cap/cap_require.oo:18:2:cap_require\",\n";
+    out = out + "  \"root_cause\": \"CAPABILITY_TRAP_VIOLATION\",\n";
+    out = out + "  \"description\": \"Execution attempted ungranted capability access without holding required capability token.\",\n";
+    out = out + "  \"capability_trap\": true,\n";
+    out = out + "  \"remediation\": \"Grant the required capability token in caller signature.\"\n";
+    out = out + "}";
+    return out;
+}
+
+pub fn proof_verify_null_deref() -> Result[Int, String] {
+    let json: String = crash_fixture_null_ptr_json();
+    let res: Result[AutopsyData, String] = autopsy_parse(json);
+    if res.is_err() {
+        return Err("proof_verify_null_deref: parse failed: " + res.unwrap_err());
+    }
+
+    let data: AutopsyData = res.unwrap();
+    if data.crash_signal != 11 {
+        return Err("proof_verify_null_deref: expected signal 11");
+    }
+    if data.signal_name != "SIGSEGV" {
+        return Err("proof_verify_null_deref: expected SIGSEGV");
+    }
+    if data.root_cause != "NULL_POINTER_DEREFERENCE" {
+        return Err("proof_verify_null_deref: expected NULL_POINTER_DEREFERENCE");
+    }
+
+    let coord: FailureCoordinate = coordinate_parse(data.failure_coordinate);
+    if !coordinate_is_valid(coord) {
+        return Err("proof_verify_null_deref: invalid failure coordinate");
+    }
+    if coord.file_path != "core/alloc/arena.oo" {
+        return Err("proof_verify_null_deref: coordinate file mismatch");
+    }
+    if coord.line_num != 42 {
+        return Err("proof_verify_null_deref: coordinate line mismatch");
+    }
+
+    let report: String = autopsy_format_report(data);
+    if str_index_of(report, "BLACKBOX CRASH AUTOPSY") < 0 {
+        return Err("proof_verify_null_deref: missing banner in report");
+    }
+    if str_index_of(report, "NULL_POINTER_DEREFERENCE") < 0 {
+        return Err("proof_verify_null_deref: missing root cause in report");
+    }
+
+    return Ok(0);
+}
+
+pub fn proof_verify_cap_trap() -> Result[Int, String] {
+    let json: String = crash_fixture_cap_trap_json();
+    let res: Result[AutopsyData, String] = autopsy_parse(json);
+    if res.is_err() {
+        return Err("proof_verify_cap_trap: parse failed: " + res.unwrap_err());
+    }
+
+    let data: AutopsyData = res.unwrap();
+    if !data.cap_trapped {
+        return Err("proof_verify_cap_trap: expected cap_trapped to be true");
+    }
+    if data.root_cause != "CAPABILITY_TRAP_VIOLATION" {
+        return Err("proof_verify_cap_trap: expected CAPABILITY_TRAP_VIOLATION");
+    }
+
+    return Ok(0);
+}
+
+pub fn crash_fixture_proof_run() -> Result[Int, String] {
+    let r1: Result[Int, String] = proof_verify_null_deref();
+    if r1.is_err() { return r1; }
+
+    let r2: Result[Int, String] = proof_verify_cap_trap();
+    if r2.is_err() { return r2; }
+
+    return Ok(0);
+}

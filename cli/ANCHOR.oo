@@ -1,0 +1,12 @@
+// # Blackbox CLI Subsystem Front Door
+//
+// Logline: Re-exports command-line interface handlers and main executable entry point.
+//
+// Setup: Bound by ProcessCap, FsReadCap, and FsWriteCap. Coordinates CLI user actions.
+//
+// Beats:
+//   1. Re-export CLI command line dispatcher.
+//   2. Re-export main entry point function.
+//   3. Provide unified interface for CLI invocations.
+
+import "main.oo";

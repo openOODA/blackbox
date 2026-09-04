@@ -1,0 +1,43 @@
+// # Blackbox Directory Watcher
+//
+// Logline: Monitors the .blackbox directory for crash autopsy artifacts and flight logs.
+//
+// Setup: Requires FsReadCap to inspect the local filesystem for autopsy records.
+//
+// Beats:
+//   1. Expose standard blackbox directory and autopsy file paths.
+//   2. Check whether an autopsy artifact exists in the target directory.
+//   3. Read autopsy JSON payload safely under FsReadCap.
+//   4. Validate path safety by rejecting directory traversal sequences.
+
+pub fn dir_watcher_default_dir() -> String {
+    return ".blackbox";
+}
+
+pub fn dir_watcher_autopsy_file() -> String {
+    return ".blackbox/autopsy.json";
+}
+
+pub fn dir_watcher_has_autopsy(&fs: FsReadCap, path: String) -> Bool {
+    let mut target: String = dir_watcher_autopsy_file();
+    if chars_len(path) > 0 {
+        target = path;
+    }
+    if str_index_of(target, "..") >= 0 {
+        return false;
+    }
+    let res: Result[String, String] = read_file(fs, target);
+    return res.is_ok();
+}
+
+pub fn dir_watcher_read_autopsy(&fs: FsReadCap, path: String) -> Result[String, String] {
+    let mut target: String = dir_watcher_autopsy_file();
+    if chars_len(path) > 0 {
+        target = path;
+    }
+    if str_index_of(target, "..") >= 0 {
+        return Err("dir_watcher: path traversal rejected");
+    }
+    let res: Result[String, String] = read_file(fs, target);
+    return res;
+}

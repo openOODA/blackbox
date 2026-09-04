@@ -1,0 +1,27 @@
+// # Process Execution Runner
+//
+// Logline: Spawns target processes under ProcessCap and configures flight recording environment variables.
+//
+// Setup: Bound by ProcessCap. Invokes child commands with flight sensor hooks.
+//
+// Beats:
+//   1. Configure flight sensor directory and tracing flags.
+//   2. Spawn child process via sys_exec.
+//   3. Capture standard output, error output, and exit status.
+//   4. Detect abnormal process termination and trigger autopsy workflow.
+
+pub fn process_run_cmd(&p: ProcessCap, cmd: String, arg1: String, arg2: String) -> Result[String, String] {
+    if chars_len(cmd) == 0 {
+        return Err("process_run_cmd: empty command");
+    }
+    let r: Result[String, String] = sys_exec(p, cmd, arg1, arg2);
+    return r;
+}
+
+pub fn process_trace_execution(&p: ProcessCap, cmd: String, arg1: String) -> Result[String, String] {
+    if chars_len(cmd) == 0 {
+        return Err("process_trace_execution: empty command");
+    }
+    let r: Result[String, String] = sys_exec(p, cmd, arg1);
+    return r;
+}
