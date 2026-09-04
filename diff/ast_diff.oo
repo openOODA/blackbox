@@ -91,16 +91,15 @@ pub fn ast_diff_compare_texts(ast_before: String, ast_after: String) -> String {
 
 pub fn ast_diff_compare_files(p: &ProcessCap, bin: String, file_b: String, file_a: String) -> Result[String, String] {
     let rb: Result[String, String] = compiler_run_ast(p, bin, file_b);
-    if rb.is_err() { return rb; }
+    let btxt: String = match rb { Ok(s) => s, Err(e) => return Err(e); };
     let ra: Result[String, String] = compiler_run_ast(p, bin, file_a);
-    if ra.is_err() { return ra; }
-    return Ok(ast_diff_compare_texts(rb.unwrap(), ra.unwrap()));
+    let atxt: String = match ra { Ok(s) => s, Err(e) => return Err(e); };
+    return Ok(ast_diff_compare_texts(btxt, atxt));
 }
 
 pub fn ast_diff_inspect_file(p: &ProcessCap, bin: String, file: String) -> Result[String, String] {
     let r: Result[String, String] = compiler_run_ast(p, bin, file);
-    if r.is_err() { return r; }
-    let raw: String = r.unwrap();
+    let raw: String = match r { Ok(s) => s, Err(e) => return Err(e); };
     let mut out: String = "=== BLACKBOX AST INSPECTION ===\n";
     out = out + "File: " + file + "\n\n";
     out = out + raw + "\n";

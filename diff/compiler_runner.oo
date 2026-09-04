@@ -24,7 +24,7 @@ pub fn compiler_run_stage(p: &ProcessCap, bin: String, stage: String, file_path:
 }
 
 pub fn compiler_run_ast(p: &ProcessCap, bin: String, file_path: String) -> Result[String, String] {
-    return compiler_run_stage(p, bin, "ast", file_path);
+    return compiler_run_stage(p, bin, "tokens", file_path);
 }
 
 pub fn compiler_run_tokens(p: &ProcessCap, bin: String, file_path: String) -> Result[String, String] {

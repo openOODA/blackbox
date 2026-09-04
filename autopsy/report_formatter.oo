@@ -96,10 +96,7 @@ pub fn autopsy_format_compact(data: AutopsyData) -> String {
 
 pub fn autopsy_format_from_json(json: String) -> Result[String, String] {
     let res: Result[AutopsyData, String] = autopsy_parse(json);
-    if res.is_err() {
-        return Err(res.unwrap_err());
-    }
-    let data: AutopsyData = res.unwrap();
+    let data: AutopsyData = match res { Ok(d) => d, Err(e) => return Err(e); };
     return Ok(autopsy_format_report(data));
 }
 

@@ -29,16 +29,10 @@ pub fn cli_help() -> String {
 pub fn cli_run_autopsy(fs: &FsReadCap, path: String) -> Result[Int, String] {
     let target: String = if chars_len(path) > 0 { path } else { dir_watcher_autopsy_file() };
     let rd: Result[String, String] = dir_watcher_read_autopsy(fs, target);
-    if rd.is_err() {
-        println("ERR autopsy read failed: " + rd.unwrap_err());
-        return Err("autopsy file unreadable: " + target);
-    }
-    let rep: Result[String, String] = autopsy_format_from_json(rd.unwrap());
-    if rep.is_err() {
-        println("ERR autopsy parse failed: " + rep.unwrap_err());
-        return Err("autopsy parsing failed");
-    }
-    println(rep.unwrap());
+    let json: String = match rd { Ok(s) => s, Err(e) => { println("ERR autopsy read failed: " + e); return Err("autopsy file unreadable: " + target); } };
+    let rep: Result[String, String] = autopsy_format_from_json(json);
+    let text: String = match rep { Ok(s) => s, Err(e) => { println("ERR autopsy parse failed: " + e); return Err("autopsy parsing failed"); } };
+    println(text);
     return Ok(0);
 }
 
@@ -49,19 +43,13 @@ pub fn cli_run_diff(p: &ProcessCap, file1: String, file2: String) -> Result[Int,
     }
     if chars_len(file2) > 0 {
         let cmp: Result[String, String] = ast_diff_compare_files(p, "", file1, file2);
-        if cmp.is_err() {
-            println("ERR AST diff failed: " + cmp.unwrap_err());
-            return Err("diff failed");
-        }
-        println(cmp.unwrap());
+        let text: String = match cmp { Ok(s) => s, Err(e) => { println("ERR AST diff failed: " + e); return Err("diff failed"); } };
+        println(text);
         return Ok(0);
     }
     let insp: Result[String, String] = ast_diff_inspect_file(p, "", file1);
-    if insp.is_err() {
-        println("ERR AST inspection failed: " + insp.unwrap_err());
-        return Err("inspection failed");
-    }
-    println(insp.unwrap());
+    let text2: String = match insp { Ok(s) => s, Err(e) => { println("ERR AST inspection failed: " + e); return Err("inspection failed"); } };
+    println(text2);
     return Ok(0);
 }
 
