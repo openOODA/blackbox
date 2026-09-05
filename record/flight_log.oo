@@ -1,0 +1,241 @@
+// # Flight Log Persistence and Stream Formatter
+//
+// Logline: Flushes ring buffer telemetry under FsWriteCap and formats flight streams chronologically.
+//
+// Setup: Bound by FsWriteCap for disk persistence. Pure string scanning for flight trace formatting.
+//
+// Beats:
+//   1. Flush serialized flight records to .blackbox/flight.json under FsWriteCap.
+//   2. Parse flight JSON events into structured EventRecord sequences.
+//   3. Format execution telemetry chronologically with phase, cap tokens, and timestamps.
+//   4. Provide fail-closed validation on malformed flight logs.
+
+import "event_record.oo";
+import "ring_buffer.oo";
+
+pub fn fs_mkdir(fw: &FsWriteCap, path: String) -> Result[Void, String] {
+    return oo_fs_mkdir(fw, path);
+}
+
+pub fn flight_log_default_path() -> String {
+    return ".blackbox/flight.json";
+}
+
+pub fn flight_flush(fw: &FsWriteCap, payload: String) -> Result[Int, String] {
+    let target: String = flight_log_default_path();
+    if str_index_of(target, "..") >= 0 { return Err("flight_flush: path traversal rejected"); }
+    let _mk: Result[Void, String] = fs_mkdir(fw, ".blackbox");
+    let wr: Result[Void, String] = write_file(fw, target, payload);
+    if wr.is_err() {
+        let e: String = match wr { Ok(_) => "", Err(msg) => msg };
+        return Err("flight_flush: " + e);
+    }
+    return Ok(chars_len(payload));
+}
+
+pub fn flight_flush_buffer(fw: &FsWriteCap, rb: RingBuffer) -> Result[Int, String] {
+    let payload: String = ring_buffer_to_json(rb);
+    return flight_flush(fw, payload);
+}
+
+fn json_is_ws(c: String) -> Bool {
+    return c == " " || c == "\t" || c == "\n" || c == "\r";
+}
+
+fn json_is_digit(c: String) -> Bool {
+    return c == "0" || c == "1" || c == "2" || c == "3" || c == "4" ||
+           c == "5" || c == "6" || c == "7" || c == "8" || c == "9";
+}
+
+fn json_digit_val(c: String) -> Int {
+    if c == "1" { return 1; } if c == "2" { return 2; } if c == "3" { return 3; }
+    if c == "4" { return 4; } if c == "5" { return 5; } if c == "6" { return 6; }
+    if c == "7" { return 7; } if c == "8" { return 8; } if c == "9" { return 9; }
+    return 0;
+}
+
+fn json_find_key_pos(json: String, key: String) -> Int {
+    let pat: String = "\"" + key + "\"";
+    let n: Int = chars_len(json);
+    let plen: Int = chars_len(pat);
+    let mut i: Int = 0;
+    let mut in_str: Bool = false;
+    let mut esc: Bool = false;
+    while i < n {
+        let c: String = char_at(json, i);
+        if in_str {
+            if esc { esc = false; } else if c == "\\" { esc = true; } else if c == "\"" { in_str = false; }
+            i = i + 1;
+            continue;
+        }
+        if c == "\"" {
+            let end_p: Int = i + plen;
+            if end_p <= n && str_slice(json, i, end_p) == pat {
+                let mut j: Int = end_p;
+                while j < n && json_is_ws(char_at(json, j)) { j = j + 1; }
+                if j < n && char_at(json, j) == ":" {
+                    j = j + 1;
+                    while j < n && json_is_ws(char_at(json, j)) { j = j + 1; }
+                    return j;
+                }
+            }
+            in_str = true;
+            i = i + 1;
+            continue;
+        }
+        i = i + 1;
+    }
+    return 0 - 1;
+}
+
+fn json_extract_str(json: String, key: String) -> String {
+    let pos: Int = json_find_key_pos(json, key);
+    if pos < 0 { return ""; }
+    let n: Int = chars_len(json);
+    if pos >= n || char_at(json, pos) != "\"" { return ""; }
+    let mut i: Int = pos + 1;
+    let mut esc: Bool = false;
+    while i < n {
+        let c: String = char_at(json, i);
+        if esc { esc = false; } else if c == "\\" { esc = true; } else if c == "\"" {
+            return str_slice(json, pos + 1, i);
+        }
+        i = i + 1;
+    }
+    return "";
+}
+
+fn json_extract_int(json: String, key: String) -> Int {
+    let pos: Int = json_find_key_pos(json, key);
+    if pos < 0 { return 0; }
+    let n: Int = chars_len(json);
+    let mut i: Int = pos;
+    let mut sign: Int = 1;
+    if i < n && char_at(json, i) == "-" { sign = 0 - 1; i = i + 1; }
+    let mut val: Int = 0;
+    while i < n {
+        let c: String = char_at(json, i);
+        if !json_is_digit(c) { break; }
+        val = val * 10 + json_digit_val(c);
+        i = i + 1;
+    }
+    return val * sign;
+}
+
+fn flight_find_events_array(json: String) -> Int {
+    let key_pos: Int = json_find_key_pos(json, "events");
+    let n: Int = chars_len(json);
+    if key_pos >= 0 {
+        let mut i: Int = key_pos;
+        while i < n {
+            if char_at(json, i) == "[" { return i; }
+            if !json_is_ws(char_at(json, i)) { break; }
+            i = i + 1;
+        }
+    }
+    let mut j: Int = 0;
+    while j < n {
+        let c: String = char_at(json, j);
+        if c == "[" { return j; }
+        if !json_is_ws(c) { break; }
+        j = j + 1;
+    }
+    return 0 - 1;
+}
+
+fn flight_parse_single_event(obj: String) -> EventRecord {
+    let seq: Int = json_extract_int(obj, "seq");
+    let phase: Int = json_extract_int(obj, "phase");
+    let mut ev_type: Int = json_extract_int(obj, "type");
+    if ev_type == 0 { ev_type = json_extract_int(obj, "event_type"); }
+    let detail: String = json_extract_str(obj, "detail");
+    let timestamp: Int = json_extract_int(obj, "timestamp");
+    return event_record_new(seq, phase, ev_type, detail, timestamp);
+}
+
+pub fn flight_parse_events(json: String) -> Result[List[EventRecord], String] {
+    if chars_len(json) == 0 { return Err("empty flight log payload"); }
+    let arr_start: Int = flight_find_events_array(json);
+    if arr_start < 0 { return Err("missing events array in flight log"); }
+    let n: Int = chars_len(json);
+    let mut i: Int = arr_start + 1;
+    let mut in_str: Bool = false;
+    let mut esc: Bool = false;
+    let mut obj_start: Int = 0 - 1;
+    let mut depth: Int = 0;
+    let mut events: List[EventRecord] = list_new();
+    while i < n {
+        let c: String = char_at(json, i);
+        if in_str {
+            if esc { esc = false; } else if c == "\\" { esc = true; } else if c == "\"" { in_str = false; }
+            i = i + 1;
+            continue;
+        }
+        if c == "\"" { in_str = true; i = i + 1; continue; }
+        if c == "{" {
+            if depth == 0 { obj_start = i; }
+            depth = depth + 1;
+        } else if c == "}" {
+            depth = depth - 1;
+            if depth == 0 && obj_start >= 0 {
+                let obj_str: String = str_slice(json, obj_start, i + 1);
+                events = list_push(events, flight_parse_single_event(obj_str));
+                obj_start = 0 - 1;
+            }
+        } else if c == "]" && depth == 0 { break; }
+        i = i + 1;
+    }
+    return Ok(events);
+}
+
+pub fn flight_sort_events(events: List[EventRecord]) -> List[EventRecord] {
+    let n: Int = list_len(events);
+    if n <= 1 { return events; }
+    let mut sorted: List[EventRecord] = list_new();
+    let mut i: Int = 0;
+    while i < n {
+        let ev: EventRecord = list_get(events, i);
+        let n_s: Int = list_len(sorted);
+        let mut j: Int = 0;
+        let mut inserted: Bool = false;
+        let mut next: List[EventRecord] = list_new();
+        while j < n_s {
+            let cur: EventRecord = list_get(sorted, j);
+            if !inserted && (ev.timestamp < cur.timestamp || (ev.timestamp == cur.timestamp && ev.seq < cur.seq)) {
+                next = list_push(next, ev);
+                inserted = true;
+            }
+            next = list_push(next, cur);
+            j = j + 1;
+        }
+        if !inserted { next = list_push(next, ev); }
+        sorted = next;
+        i = i + 1;
+    }
+    return sorted;
+}
+
+pub fn flight_format_stream(events: List[EventRecord]) -> String {
+    let sorted: List[EventRecord] = flight_sort_events(events);
+    let n: Int = list_len(sorted);
+    let mut out: String = "";
+    let mut i: Int = 0;
+    while i < n {
+        let ev: EventRecord = list_get(sorted, i);
+        let s_seq: String = ev.seq.to_string();
+        let s_time: String = ev.timestamp.to_string();
+        let p_name: String = telemetry_schema_phase_name(ev.phase);
+        let t_name: String = telemetry_schema_event_name(ev.event_type);
+        let line: String = "[" + s_seq + " @ " + s_time + "ms] " + p_name + "::" + t_name + " - " + ev.detail;
+        if i > 0 { out = out + "\n"; }
+        out = out + line;
+        i = i + 1;
+    }
+    return out;
+}
+
+pub fn flight_format_from_json(json: String) -> Result[String, String] {
+    let res: Result[List[EventRecord], String] = flight_parse_events(json);
+    let events: List[EventRecord] = match res { Ok(evs) => evs, Err(e) => return Err(e) };
+    return Ok(flight_format_stream(events));
+}

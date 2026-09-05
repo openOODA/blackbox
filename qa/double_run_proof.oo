@@ -5,28 +5,50 @@
 // Setup: Double-Run Invariant verification (Run1 == Run2). Fails closed on any non-deterministic drift.
 //
 // Beats:
-//   1. Execute first run of autopsy JSON diagnostic report generation.
-//   2. Execute second run of autopsy JSON diagnostic report generation on identical input.
-//   3. Assert byte-identical equality across both output reports.
-//   4. Assert determinism across token dump diffing and telemetry serialization.
+//   1. Assert autopsy report double-run determinism on crash fixtures.
+//   2. Assert AST diff double-run determinism on compiler dumps.
+//   3. Assert individual telemetry event record serialization determinism.
+//   4. Assert ring buffer push, wrap-around, and dual buffer determinism.
+//   5. Assert flight trace stream chronological formatting determinism.
 
 import "autopsy/report_formatter.oo";
 import "diff/ast_diff.oo";
 import "record/event_record.oo";
-import "crash_fixture_proof.oo";
+import "record/ring_buffer.oo";
+import "record/flight_log.oo";
+import "crash_fixtures.oo";
 
-pub fn proof_double_run_autopsy() -> Result[Int, String] {
-    let json: String = crash_fixture_null_ptr_json();
-
+fn assert_autopsy_deterministic(json: String, name: String) -> Result[Int, String] {
     let r1: Result[String, String] = report_formatter_from_json(json);
-    let rep1: String = match r1 { Ok(s) => s, Err(e) => return Err("proof_double_run_autopsy: run 1 failed: " + e); };
+    let rep1: String = match r1 { Ok(s) => s, Err(e) => return Err("proof_double_run_autopsy (" + name + "): run 1 failed: " + e); };
 
     let r2: Result[String, String] = report_formatter_from_json(json);
-    let rep2: String = match r2 { Ok(s) => s, Err(e) => return Err("proof_double_run_autopsy: run 2 failed: " + e); };
+    let rep2: String = match r2 { Ok(s) => s, Err(e) => return Err("proof_double_run_autopsy (" + name + "): run 2 failed: " + e); };
 
     if rep1 != rep2 {
-        return Err("double-run invariant violation: autopsy output drifted between runs");
+        return Err("double-run invariant violation: " + name + " output drifted between runs");
     }
+    return Ok(0);
+}
+
+pub fn proof_double_run_autopsy() -> Result[Int, String] {
+    let c1: Result[Int, String] = assert_autopsy_deterministic(crash_fixture_null_ptr_json(), "null_ptr");
+    if c1.is_err() { return c1; }
+
+    let c2: Result[Int, String] = assert_autopsy_deterministic(crash_fixture_cap_trap_json(), "cap_trap");
+    if c2.is_err() { return c2; }
+
+    let c3: Result[Int, String] = assert_autopsy_deterministic(crash_fixture_arena_oom_json(), "arena_oom");
+    if c3.is_err() { return c3; }
+
+    let c4: Result[Int, String] = assert_autopsy_deterministic(crash_fixture_sigbus_json(), "sigbus");
+    if c4.is_err() { return c4; }
+
+    let c5: Result[Int, String] = assert_autopsy_deterministic(crash_fixture_sigill_json(), "sigill");
+    if c5.is_err() { return c5; }
+
+    let c6: Result[Int, String] = assert_autopsy_deterministic(crash_fixture_sigabrt_json(), "sigabrt");
+    if c6.is_err() { return c6; }
 
     return Ok(0);
 }
@@ -58,6 +80,114 @@ pub fn proof_double_run_telemetry() -> Result[Int, String] {
     return Ok(0);
 }
 
+fn build_sample_ring_buffer() -> RingBuffer {
+    let mut rb: RingBuffer = ring_buffer_new(4);
+    rb = ring_buffer_push(rb, event_record_new(1, 1, 1, "init telemetry system", 1000));
+    rb = ring_buffer_push(rb, event_record_new(2, 1, 2, "request FsReadCap", 1005));
+    rb = ring_buffer_push(rb, event_record_new(3, 2, 1, "begin lexing stage", 1010));
+    rb = ring_buffer_push(rb, event_record_new(4, 3, 3, "parse item FnDecl", 1020));
+    rb = ring_buffer_push(rb, event_record_new(5, 4, 4, "arena watermark 64K", 1030));
+    rb = ring_buffer_push(rb, event_record_new(6, 5, 5, "codegen output binary", 1040));
+    return rb;
+}
+
+pub fn proof_double_run_ring_buffer() -> Result[Int, String] {
+    let rb1: RingBuffer = build_sample_ring_buffer();
+    let j1: String = ring_buffer_to_json(rb1);
+    let len1: Int = ring_buffer_len(rb1);
+    let tot1: Int = ring_buffer_total(rb1);
+
+    let rb2: RingBuffer = build_sample_ring_buffer();
+    let j2: String = ring_buffer_to_json(rb2);
+    let len2: Int = ring_buffer_len(rb2);
+    let tot2: Int = ring_buffer_total(rb2);
+
+    if j1 != j2 {
+        return Err("double-run invariant violation: ring buffer json drifted");
+    }
+    if len1 != len2 || len1 != 4 {
+        return Err("double-run invariant violation: ring buffer length mismatch");
+    }
+    if tot1 != tot2 || tot1 != 6 {
+        return Err("double-run invariant violation: ring buffer total mismatch");
+    }
+
+    let mut drb1: DualRingBuffer = dual_ring_buffer_new(4);
+    drb1 = dual_ring_buffer_record(drb1, event_record_new(1, 1, 1, "init", 1000));
+    drb1 = dual_ring_buffer_record(drb1, event_record_new(2, 2, 1, "lex", 1010));
+    drb1 = dual_ring_buffer_swap(drb1);
+    let snap1: RingBuffer = dual_ring_buffer_snapshot(drb1);
+    let sj1: String = ring_buffer_to_json(snap1);
+
+    let mut drb2: DualRingBuffer = dual_ring_buffer_new(4);
+    drb2 = dual_ring_buffer_record(drb2, event_record_new(1, 1, 1, "init", 1000));
+    drb2 = dual_ring_buffer_record(drb2, event_record_new(2, 2, 1, "lex", 1010));
+    drb2 = dual_ring_buffer_swap(drb2);
+    let snap2: RingBuffer = dual_ring_buffer_snapshot(drb2);
+    let sj2: String = ring_buffer_to_json(snap2);
+
+    if sj1 != sj2 {
+        return Err("double-run invariant violation: dual ring buffer snapshot drifted");
+    }
+
+    return Ok(0);
+}
+
+fn sample_flight_json() -> String {
+    let mut s: String = "{\"schema_version\":\"1.0.0\",\"capacity\":128,\"total_events\":3,\"events\":[";
+    s = s + "{\"seq\":1,\"phase\":1,\"type\":1,\"detail\":\"INIT phase started\",\"timestamp\":1000},";
+    s = s + "{\"seq\":2,\"phase\":1,\"type\":2,\"detail\":\"cap: &FsReadCap\",\"timestamp\":1005},";
+    s = s + "{\"seq\":3,\"phase\":2,\"type\":1,\"detail\":\"LEX phase started\",\"timestamp\":1010}";
+    s = s + "]}";
+    return s;
+}
+
+pub fn proof_double_run_flight_trace() -> Result[Int, String] {
+    let json_in: String = sample_flight_json();
+
+    let r1: Result[String, String] = flight_format_from_json(json_in);
+    if r1.is_err() {
+        let e1: String = match r1 { Ok(_) => "", Err(m) => m };
+        return Err("proof_double_run_flight_trace: run 1 failed: " + e1);
+    }
+    let trace1: String = match r1 { Ok(s) => s, Err(_) => "" };
+
+    let r2: Result[String, String] = flight_format_from_json(json_in);
+    if r2.is_err() {
+        let e2: String = match r2 { Ok(_) => "", Err(m) => m };
+        return Err("proof_double_run_flight_trace: run 2 failed: " + e2);
+    }
+    let trace2: String = match r2 { Ok(s) => s, Err(_) => "" };
+
+    if trace1 != trace2 {
+        return Err("double-run invariant violation: flight trace formatting drifted");
+    }
+
+    if str_index_of(trace1, "[1 @ 1000ms] INIT::PHASE_CHANGE - INIT phase started") < 0 {
+        return Err("proof_double_run_flight_trace: missing formatted event 1");
+    }
+    if str_index_of(trace1, "[2 @ 1005ms] INIT::CAP_REQUIRE - cap: &FsReadCap") < 0 {
+        return Err("proof_double_run_flight_trace: missing formatted event 2");
+    }
+    if str_index_of(trace1, "[3 @ 1010ms] LEX::PHASE_CHANGE - LEX phase started") < 0 {
+        return Err("proof_double_run_flight_trace: missing formatted event 3");
+    }
+
+    let bad_json: String = "{invalid_json_stream";
+    let b1: Result[String, String] = flight_format_from_json(bad_json);
+    let b2: Result[String, String] = flight_format_from_json(bad_json);
+    if b1.is_ok() || b2.is_ok() {
+        return Err("proof_double_run_flight_trace: malformed json must fail closed");
+    }
+    let err1: String = match b1 { Ok(_) => "", Err(m) => m };
+    let err2: String = match b2 { Ok(_) => "", Err(m) => m };
+    if err1 != err2 {
+        return Err("double-run invariant violation: error message drifted");
+    }
+
+    return Ok(0);
+}
+
 pub fn double_run_proof_run() -> Result[Int, String] {
     let r_a: Result[Int, String] = proof_double_run_autopsy();
     if r_a.is_err() { return r_a; }
@@ -67,6 +197,12 @@ pub fn double_run_proof_run() -> Result[Int, String] {
 
     let r_t: Result[Int, String] = proof_double_run_telemetry();
     if r_t.is_err() { return r_t; }
+
+    let r_rb: Result[Int, String] = proof_double_run_ring_buffer();
+    if r_rb.is_err() { return r_rb; }
+
+    let r_ft: Result[Int, String] = proof_double_run_flight_trace();
+    if r_ft.is_err() { return r_ft; }
 
     return Ok(0);
 }

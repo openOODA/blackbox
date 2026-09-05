@@ -33,6 +33,8 @@ type AutopsyData = struct {
     registers_rsp: String,
     registers_rbp: String,
     cap_trapped: Bool,
+    cap_mask_required: Int,
+    cap_mask_held: Int,
     granted_caps: List[String],
     remediation: String
 };
@@ -68,6 +70,14 @@ pub fn autopsy_format_report(data: AutopsyData) -> String {
     out = out + "Capability State:\n";
     let s_trap: String = if data.cap_trapped { "true" } else { "false" };
     out = out + "  Trapped: " + s_trap + "\n";
+    if data.cap_trapped {
+        let req: Int = data.cap_mask_required;
+        let held: Int = data.cap_mask_held;
+        let missing: Int = cap_calc_missing(req, held);
+        out = out + "  Required Mask: " + req.to_string() + "\n";
+        out = out + "  Held Mask: " + held.to_string() + "\n";
+        out = out + "  Missing Mask: " + missing.to_string() + "\n";
+    }
     out = out + "  Granted Caps: [";
     let caps: List[String] = data.granted_caps;
     let n_caps: Int = list_len(caps);

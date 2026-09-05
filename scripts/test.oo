@@ -8,13 +8,15 @@
 //   1. Run surface verification of tool schemas and telemetry codes.
 //   2. Run crash fixture parsing and classification proofs.
 //   3. Run double-run determinism invariant proofs.
-//   4. Print success status and return 0.
+//   4. Run MCP diagnostic server proofs under capability enforcement.
+//   5. Print success status and return 0.
 
 import "verify_surface.oo";
 import "qa/crash_fixture_proof.oo";
 import "qa/double_run_proof.oo";
+import "qa/mcp_proof.oo";
 
-pub fn test_run_all() -> Result[Int, String] {
+pub fn test_run_all(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap) -> Result[Int, String] {
     let r_surf: Result[Int, String] = verify_surface();
     if r_surf.is_err() {
         let e: String = match r_surf { Ok(_) => "", Err(msg) => msg };
@@ -33,12 +35,18 @@ pub fn test_run_all() -> Result[Int, String] {
         return Err("test: double-run proof failed: " + e);
     }
 
+    let r_mcp: Result[Int, String] = mcp_proof_run(p, fs, fw, env);
+    if r_mcp.is_err() {
+        let e: String = match r_mcp { Ok(_) => "", Err(msg) => msg };
+        return Err("mcp_proof failed: " + e);
+    }
+
     return Ok(0);
 }
 
-pub fn main(&p: ProcessCap, &fs: FsReadCap, &fw: FsWriteCap, &env: EnvCap, args: List[String]) -> Result[Int, String] {
+pub fn main(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap, args: List[String]) -> Result[Int, String] {
     println("test: starting blackbox test suite...");
-    let res: Result[Int, String] = test_run_all();
+    let res: Result[Int, String] = test_run_all(p, fs, fw, env);
     if res.is_err() {
         let e: String = match res { Ok(_) => "", Err(msg) => msg };
         println("ERR test failed: " + e);

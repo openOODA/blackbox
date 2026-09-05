@@ -36,16 +36,20 @@ pub fn verify_has_academy_header(text: String) -> Bool {
 }
 
 pub fn verify_surface() -> Result[Int, String] {
-    if blackbox_mcp_tool_count() != 2 {
-        return Err("mcp tool count drifted from 2");
+    if blackbox_mcp_tool_count() != 3 {
+        return Err("mcp tool count drifted from 3");
     }
 
-    if blackbox_mcp_tool_caps("blackbox_autopsy") != 1 {
-        return Err("blackbox_autopsy must require FsReadCap (mask 1)");
+    if blackbox_mcp_tool_caps("blackbox_trace") != 1 {
+        return Err("blackbox_trace caps drifted");
     }
 
     if blackbox_mcp_tool_caps("blackbox_diff") != 5 {
-        return Err("blackbox_diff must require FsReadCap | ProcessCap (mask 5)");
+        return Err("blackbox_diff caps drifted");
+    }
+
+    if blackbox_mcp_tool_caps("blackbox_autopsy") != 1 {
+        return Err("blackbox_autopsy caps drifted");
     }
 
     if event_type_phase_change() != 1 {
@@ -73,4 +77,8 @@ pub fn verify_surface() -> Result[Int, String] {
     }
 
     return Ok(0);
+}
+
+pub fn verify_surface_run(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap) -> Result[Int, String] {
+    return verify_surface();
 }

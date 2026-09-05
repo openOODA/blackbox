@@ -2,18 +2,21 @@
 //
 // Logline: Proves that crash payloads parse accurately and produce correct root-cause classifications.
 //
-// Setup: Pure string fixtures. Proves SIGSEGV null dereferences and capability traps fail closed.
+// Setup: Pure string fixtures. Proves POSIX signals, capability traps, and arena OOM fail closed.
 //
 // Beats:
-//   1. Define canonical crash fixture JSON string literals.
-//   2. Verify SIGSEGV null pointer dereference parsing and coordinate extraction.
-//   3. Verify capability trap interception and classification.
-//   4. Verify formatted diagnostic report completeness.
+//   1. Verify SIGSEGV null pointer dereference parsing and coordinate extraction.
+//   2. Verify capability trap interception and bitmask extraction.
+//   3. Verify arena memory exhaustion detection and patch guards.
+//   4. Verify SIGBUS and SIGILL fault classification and exact file:line:col coordinates.
+//   5. Verify contract assertion abort diagnostics and 1-turn remediation.
+//   6. Run full verification suite across all crash fixtures.
 
 import "autopsy/autopsy_parser.oo";
 import "autopsy/coordinate_locator.oo";
 import "autopsy/root_cause.oo";
 import "autopsy/report_formatter.oo";
+import "crash_fixtures.oo";
 
 type AutopsyStackFrame = struct {
     frame_num: Int,
@@ -35,79 +38,34 @@ type AutopsyData = struct {
     registers_rsp: String,
     registers_rbp: String,
     cap_trapped: Bool,
+    cap_mask_required: Int,
+    cap_mask_held: Int,
     granted_caps: List[String],
     remediation: String
 };
-
-pub fn crash_fixture_null_ptr_json() -> String {
-    let mut out: String = "{\n";
-    out = out + "  \"schema_version\": \"1.0.0\",\n";
-    out = out + "  \"crash_signal\": 11,\n";
-    out = out + "  \"signal_name\": \"SIGSEGV\",\n";
-    out = out + "  \"fault_address\": \"0x0000000000000000\",\n";
-    out = out + "  \"failure_coordinate\": \"core/alloc/arena.oo:42:5:arena_alloc\",\n";
-    out = out + "  \"root_cause\": \"NULL_POINTER_DEREFERENCE\",\n";
-    out = out + "  \"description\": \"Unhandled dereference of null pointer at memory address 0x0.\",\n";
-    out = out + "  \"rip\": \"0x000055555556a1b0\",\n";
-    out = out + "  \"rsp\": \"0x00007fffffffe210\",\n";
-    out = out + "  \"rbp\": \"0x00007fffffffe240\",\n";
-    out = out + "  \"capability_trap\": false,\n";
-    out = out + "  \"remediation\": \"Add a null-check guard `if ptr == 0 { return Err(\\\"null arena\\\"); }` at arena.oo:42 before accessing struct fields.\"\n";
-    out = out + "}";
-    return out;
-}
-
-pub fn crash_fixture_cap_trap_json() -> String {
-    let mut out: String = "{\n";
-    out = out + "  \"schema_version\": \"1.0.0\",\n";
-    out = out + "  \"crash_signal\": 6,\n";
-    out = out + "  \"signal_name\": \"SIGABRT\",\n";
-    out = out + "  \"fault_address\": \"0x0000000000000000\",\n";
-    out = out + "  \"failure_coordinate\": \"sec/cap/cap_require.oo:18:2:cap_require\",\n";
-    out = out + "  \"root_cause\": \"CAPABILITY_TRAP_VIOLATION\",\n";
-    out = out + "  \"description\": \"Execution attempted ungranted capability access without holding required capability token.\",\n";
-    out = out + "  \"capability_trap\": true,\n";
-    out = out + "  \"remediation\": \"Grant the required capability token in caller signature.\"\n";
-    out = out + "}";
-    return out;
-}
 
 pub fn proof_verify_null_deref() -> Result[Int, String] {
     let json: String = crash_fixture_null_ptr_json();
     let res: Result[AutopsyData, String] = autopsy_parse(json);
     let data: AutopsyData = match res { Ok(d) => d, Err(e) => return Err("proof_verify_null_deref: parse failed: " + e); };
-    if data.crash_signal != 11 {
-        return Err("proof_verify_null_deref: expected signal 11");
-    }
-    if data.signal_name != "SIGSEGV" {
-        return Err("proof_verify_null_deref: expected SIGSEGV");
-    }
-    if data.root_cause != "NULL_POINTER_DEREFERENCE" {
-        return Err("proof_verify_null_deref: expected NULL_POINTER_DEREFERENCE");
-    }
+    if data.crash_signal != 11 { return Err("proof_verify_null_deref: expected signal 11"); }
+    if data.signal_name != "SIGSEGV" { return Err("proof_verify_null_deref: expected SIGSEGV"); }
+    if data.root_cause != "NULL_POINTER_DEREFERENCE" { return Err("proof_verify_null_deref: expected NULL_POINTER_DEREFERENCE"); }
+    if data.registers_rip != "0x000055555556a1b0" { return Err("proof_verify_null_deref: registers_rip mismatch"); }
+    if data.registers_rsp != "0x00007fffffffe210" { return Err("proof_verify_null_deref: registers_rsp mismatch"); }
+    if data.registers_rbp != "0x00007fffffffe240" { return Err("proof_verify_null_deref: registers_rbp mismatch"); }
 
     let coord: FailureCoordinate = coordinate_parse(data.failure_coordinate);
-    if !coordinate_is_valid(coord) {
-        return Err("proof_verify_null_deref: invalid failure coordinate");
-    }
-    if coord.file_path != "core/alloc/arena.oo" {
-        return Err("proof_verify_null_deref: coordinate file mismatch");
-    }
-    if coord.line_num != 42 {
-        return Err("proof_verify_null_deref: coordinate line mismatch");
-    }
+    if !coordinate_is_valid(coord) { return Err("proof_verify_null_deref: invalid failure coordinate"); }
+    if coord.file_path != "core/alloc/arena.oo" { return Err("proof_verify_null_deref: coordinate file mismatch"); }
+    if coord.line_num != 42 { return Err("proof_verify_null_deref: coordinate line mismatch"); }
+    let s_src: String = coordinate_format_source(coord);
+    if s_src != "core/alloc/arena.oo:42:5" { return Err("proof_verify_null_deref: source coordinate mismatch: " + s_src); }
 
     let report: String = autopsy_format_report(data);
-    if str_index_of(report, "BLACKBOX CRASH AUTOPSY") < 0 {
-        return Err("proof_verify_null_deref: missing banner in report");
-    }
-    if str_index_of(report, "NULL_POINTER_DEREFERENCE") < 0 {
-        return Err("proof_verify_null_deref: missing root cause in report");
-    }
-    if str_index_of(report, "core/alloc/arena.oo:42:5:arena_alloc") < 0 {
-        return Err("proof_verify_null_deref: missing failure_coordinate in report");
-    }
-
+    if str_index_of(report, "BLACKBOX CRASH AUTOPSY") < 0 { return Err("proof_verify_null_deref: missing banner"); }
+    if str_index_of(report, "NULL_POINTER_DEREFERENCE") < 0 { return Err("proof_verify_null_deref: missing root cause"); }
+    if str_index_of(data.remediation, "core/alloc/arena.oo:42:5") < 0 { return Err("proof_verify_null_deref: missing coord in remed"); }
     return Ok(0);
 }
 
@@ -115,14 +73,87 @@ pub fn proof_verify_cap_trap() -> Result[Int, String] {
     let json: String = crash_fixture_cap_trap_json();
     let res: Result[AutopsyData, String] = autopsy_parse(json);
     let data: AutopsyData = match res { Ok(d) => d, Err(e) => return Err("proof_verify_cap_trap: parse failed: " + e); };
-    let is_trapped: Bool = data.cap_trapped;
-    if !is_trapped {
-        return Err("proof_verify_cap_trap: expected cap_trapped to be true");
-    }
-    if data.root_cause != "CAPABILITY_TRAP_VIOLATION" {
-        return Err("proof_verify_cap_trap: expected CAPABILITY_TRAP_VIOLATION");
-    }
+    if !data.cap_trapped { return Err("proof_verify_cap_trap: expected cap_trapped true"); }
+    if data.cap_mask_required != 5 { return Err("proof_verify_cap_trap: expected required mask 5"); }
+    if data.cap_mask_held != 1 { return Err("proof_verify_cap_trap: expected held mask 1"); }
+    if data.root_cause != "CAPABILITY_TRAP_VIOLATION" { return Err("proof_verify_cap_trap: expected CAPABILITY_TRAP_VIOLATION"); }
+    if data.registers_rip != "0x000055555556d300" { return Err("proof_verify_cap_trap: registers_rip mismatch"); }
+    if data.registers_rsp != "0x00007fffffffe180" { return Err("proof_verify_cap_trap: registers_rsp mismatch"); }
+    if data.registers_rbp != "0x00007fffffffe1b0" { return Err("proof_verify_cap_trap: registers_rbp mismatch"); }
 
+    let coord: FailureCoordinate = coordinate_parse(data.failure_coordinate);
+    if coordinate_format_source(coord) != "sec/cap/cap_require.oo:18:2" { return Err("proof_verify_cap_trap: source coord mismatch"); }
+    if str_index_of(data.remediation, "sec/cap/cap_require.oo:18:2") < 0 { return Err("proof_verify_cap_trap: missing coord in remed"); }
+    return Ok(0);
+}
+
+pub fn proof_verify_arena_oom() -> Result[Int, String] {
+    let json: String = crash_fixture_arena_oom_json();
+    let res: Result[AutopsyData, String] = autopsy_parse(json);
+    let data: AutopsyData = match res { Ok(d) => d, Err(e) => return Err("proof_verify_arena_oom: parse failed: " + e); };
+    if data.crash_signal != 6 { return Err("proof_verify_arena_oom: expected signal 6"); }
+    if data.root_cause != "ARENA_MEMORY_EXHAUSTION" { return Err("proof_verify_arena_oom: expected ARENA_MEMORY_EXHAUSTION"); }
+    if data.registers_rip != "0x000055555556b100" { return Err("proof_verify_arena_oom: registers_rip mismatch"); }
+    if data.registers_rsp != "0x00007fffffffe190" { return Err("proof_verify_arena_oom: registers_rsp mismatch"); }
+    if data.registers_rbp != "0x00007fffffffe1c0" { return Err("proof_verify_arena_oom: registers_rbp mismatch"); }
+
+    let coord: FailureCoordinate = coordinate_parse(data.failure_coordinate);
+    if coordinate_format_source(coord) != "core/alloc/arena.oo:88:12" { return Err("proof_verify_arena_oom: source coord mismatch"); }
+    if str_index_of(data.remediation, "core/alloc/arena.oo:88:12") < 0 { return Err("proof_verify_arena_oom: missing coord in remed"); }
+    if str_index_of(data.remediation, "arena capacity guard") < 0 { return Err("proof_verify_arena_oom: missing patch hint"); }
+    return Ok(0);
+}
+
+pub fn proof_verify_sigbus() -> Result[Int, String] {
+    let json: String = crash_fixture_sigbus_json();
+    let res: Result[AutopsyData, String] = autopsy_parse(json);
+    let data: AutopsyData = match res { Ok(d) => d, Err(e) => return Err("proof_verify_sigbus: parse failed: " + e); };
+    if data.crash_signal != 7 { return Err("proof_verify_sigbus: expected signal 7"); }
+    if data.signal_name != "SIGBUS" { return Err("proof_verify_sigbus: expected SIGBUS"); }
+    if data.root_cause != "BUS_ERROR" { return Err("proof_verify_sigbus: expected BUS_ERROR"); }
+    if data.registers_rip != "0x000055555556e420" { return Err("proof_verify_sigbus: registers_rip mismatch"); }
+    if data.registers_rsp != "0x00007fffffffe150" { return Err("proof_verify_sigbus: registers_rsp mismatch"); }
+    if data.registers_rbp != "0x00007fffffffe180" { return Err("proof_verify_sigbus: registers_rbp mismatch"); }
+
+    let coord: FailureCoordinate = coordinate_parse(data.failure_coordinate);
+    if coordinate_format_source(coord) != "core/mem/buffer.oo:64:8" { return Err("proof_verify_sigbus: source coord mismatch"); }
+    if str_index_of(data.remediation, "core/mem/buffer.oo:64:8") < 0 { return Err("proof_verify_sigbus: missing coord in remed"); }
+    if str_index_of(data.remediation, "alignment guard") < 0 { return Err("proof_verify_sigbus: missing patch hint"); }
+    return Ok(0);
+}
+
+pub fn proof_verify_sigill() -> Result[Int, String] {
+    let json: String = crash_fixture_sigill_json();
+    let res: Result[AutopsyData, String] = autopsy_parse(json);
+    let data: AutopsyData = match res { Ok(d) => d, Err(e) => return Err("proof_verify_sigill: parse failed: " + e); };
+    if data.crash_signal != 4 { return Err("proof_verify_sigill: expected signal 4"); }
+    if data.signal_name != "SIGILL" { return Err("proof_verify_sigill: expected SIGILL"); }
+    if data.root_cause != "ILLEGAL_INSTRUCTION" { return Err("proof_verify_sigill: expected ILLEGAL_INSTRUCTION"); }
+    if data.registers_rip != "0x000055555556f890" { return Err("proof_verify_sigill: registers_rip mismatch"); }
+    if data.registers_rsp != "0x00007fffffffe100" { return Err("proof_verify_sigill: registers_rsp mismatch"); }
+    if data.registers_rbp != "0x00007fffffffe130" { return Err("proof_verify_sigill: registers_rbp mismatch"); }
+
+    let coord: FailureCoordinate = coordinate_parse(data.failure_coordinate);
+    if coordinate_format_source(coord) != "core/cpu/dispatch.oo:31:4" { return Err("proof_verify_sigill: source coord mismatch"); }
+    if str_index_of(data.remediation, "core/cpu/dispatch.oo:31:4") < 0 { return Err("proof_verify_sigill: missing coord in remed"); }
+    if str_index_of(data.remediation, "CPU feature guard") < 0 { return Err("proof_verify_sigill: missing patch hint"); }
+    return Ok(0);
+}
+
+pub fn proof_verify_assertion() -> Result[Int, String] {
+    let json: String = crash_fixture_sigabrt_json();
+    let res: Result[AutopsyData, String] = autopsy_parse(json);
+    let data: AutopsyData = match res { Ok(d) => d, Err(e) => return Err("proof_verify_assertion: parse failed: " + e); };
+    if data.crash_signal != 6 { return Err("proof_verify_assertion: expected signal 6"); }
+    if data.signal_name != "SIGABRT" { return Err("proof_verify_assertion: expected SIGABRT"); }
+    if data.root_cause != "ABORT_TRIGGERED" { return Err("proof_verify_assertion: expected ABORT_TRIGGERED"); }
+    if data.registers_rip != "0x000055555556d010" { return Err("proof_verify_assertion: registers_rip mismatch"); }
+    if data.registers_rsp != "0x00007fffffffe090" { return Err("proof_verify_assertion: registers_rsp mismatch"); }
+    if data.registers_rbp != "0x00007fffffffe0c0" { return Err("proof_verify_assertion: registers_rbp mismatch"); }
+
+    let coord: FailureCoordinate = coordinate_parse(data.failure_coordinate);
+    if coordinate_format_source(coord) != "core/contract/assert.oo:15:3" { return Err("proof_verify_assertion: source coord mismatch"); }
+    if str_index_of(data.remediation, "core/contract/assert.oo:15:3") < 0 { return Err("proof_verify_assertion: missing coord in remed"); }
     return Ok(0);
 }
 
@@ -132,6 +163,18 @@ pub fn crash_fixture_proof_run() -> Result[Int, String] {
 
     let r2: Result[Int, String] = proof_verify_cap_trap();
     if r2.is_err() { return r2; }
+
+    let r3: Result[Int, String] = proof_verify_arena_oom();
+    if r3.is_err() { return r3; }
+
+    let r4: Result[Int, String] = proof_verify_sigbus();
+    if r4.is_err() { return r4; }
+
+    let r5: Result[Int, String] = proof_verify_sigill();
+    if r5.is_err() { return r5; }
+
+    let r6: Result[Int, String] = proof_verify_assertion();
+    if r6.is_err() { return r6; }
 
     return Ok(0);
 }

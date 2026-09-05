@@ -5,11 +5,12 @@
 // Setup: Pure analysis and diagnosis pipeline. Generates compact 1-turn agent diagnostic reports.
 //
 // Beats:
-//   1. Re-export source coordinate parsing and locator services.
-//   2. Re-export root-cause classification and remediation mapping.
-//   3. Re-export zero-heap autopsy JSON parsing routines.
-//   4. Re-export diagnostic report formatting engine.
+//   1. Re-export zero-heap JSON scanning utilities.
+//   2. Re-export source coordinate parsing and locator services.
+//   3. Re-export root-cause classification and remediation mapping.
+//   4. Re-export crash autopsy data parser and report formatter.
 
+import "autopsy_json.oo";
 import "coordinate_locator.oo";
 import "root_cause.oo";
 import "autopsy_parser.oo";

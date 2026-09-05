@@ -1,0 +1,134 @@
+// # QA Crash Fixtures
+//
+// Logline: Canonical JSON crash payloads representing all substrate failure modes for blackbox diagnostics.
+//
+// Setup: Pure string generators for POSIX signals, capability fault traps, and arena exhaustion.
+//
+// Beats:
+//   1. Generate SIGSEGV null pointer dereference crash payload.
+//   2. Generate SIGABRT capability fault trap payload with required/held bitmasks.
+//   3. Generate SIGABRT arena memory exhaustion payload.
+//   4. Generate SIGBUS unaligned memory access payload.
+//   5. Generate SIGILL illegal instruction opcode payload.
+//   6. Generate SIGABRT contract assertion abort payload.
+
+pub fn crash_fixture_null_ptr_json() -> String {
+    let mut out: String = "{\n";
+    out = out + "  \"schema_version\": \"1.0.0\",\n";
+    out = out + "  \"crash_signal\": 11,\n";
+    out = out + "  \"signal_name\": \"SIGSEGV\",\n";
+    out = out + "  \"fault_address\": \"0x0000000000000000\",\n";
+    out = out + "  \"failure_coordinate\": \"core/alloc/arena.oo:42:5:arena_alloc\",\n";
+    out = out + "  \"root_cause\": \"NULL_POINTER_DEREFERENCE\",\n";
+    out = out + "  \"description\": \"Unhandled dereference of null pointer at memory address 0x0.\",\n";
+    out = out + "  \"rip\": \"0x000055555556a1b0\",\n";
+    out = out + "  \"rsp\": \"0x00007fffffffe210\",\n";
+    out = out + "  \"rbp\": \"0x00007fffffffe240\",\n";
+    out = out + "  \"capability_trap\": false,\n";
+    out = out + "  \"cap_mask_required\": 0,\n";
+    out = out + "  \"cap_mask_held\": 0,\n";
+    out = out + "  \"remediation\": \"Add a null-check guard `if ptr == 0 { return Err(\\\"null pointer dereference\\\"); }` at core/alloc/arena.oo:42:5 before accessing struct fields.\"\n";
+    out = out + "}";
+    return out;
+}
+
+pub fn crash_fixture_cap_trap_json() -> String {
+    let mut out: String = "{\n";
+    out = out + "  \"schema_version\": \"1.0.0\",\n";
+    out = out + "  \"crash_signal\": 6,\n";
+    out = out + "  \"signal_name\": \"SIGABRT\",\n";
+    out = out + "  \"fault_address\": \"0x0000000000000000\",\n";
+    out = out + "  \"failure_coordinate\": \"sec/cap/cap_require.oo:18:2:cap_require\",\n";
+    out = out + "  \"root_cause\": \"CAPABILITY_TRAP_VIOLATION\",\n";
+    out = out + "  \"description\": \"Execution attempted ungranted capability access without holding required capability token.\",\n";
+    out = out + "  \"rip\": \"0x000055555556d300\",\n";
+    out = out + "  \"rsp\": \"0x00007fffffffe180\",\n";
+    out = out + "  \"rbp\": \"0x00007fffffffe1b0\",\n";
+    out = out + "  \"capability_trap\": true,\n";
+    out = out + "  \"cap_mask_required\": 5,\n";
+    out = out + "  \"cap_mask_held\": 1,\n";
+    out = out + "  \"remediation\": \"Add capability guard `if (caps & mask) != mask { return Err(\\\"missing capability\\\"); }` or grant required capability token in signature at sec/cap/cap_require.oo:18:2.\"\n";
+    out = out + "}";
+    return out;
+}
+
+pub fn crash_fixture_arena_oom_json() -> String {
+    let mut out: String = "{\n";
+    out = out + "  \"schema_version\": \"1.0.0\",\n";
+    out = out + "  \"crash_signal\": 6,\n";
+    out = out + "  \"signal_name\": \"SIGABRT\",\n";
+    out = out + "  \"fault_address\": \"0x00007fffdead0000\",\n";
+    out = out + "  \"failure_coordinate\": \"core/alloc/arena.oo:88:12:arena_alloc_chunk\",\n";
+    out = out + "  \"root_cause\": \"ARENA_MEMORY_EXHAUSTION\",\n";
+    out = out + "  \"description\": \"Process aborted due to arena memory exhaustion or heap capacity limit reached.\",\n";
+    out = out + "  \"rip\": \"0x000055555556b100\",\n";
+    out = out + "  \"rsp\": \"0x00007fffffffe190\",\n";
+    out = out + "  \"rbp\": \"0x00007fffffffe1c0\",\n";
+    out = out + "  \"capability_trap\": false,\n";
+    out = out + "  \"cap_mask_required\": 0,\n";
+    out = out + "  \"cap_mask_held\": 0,\n";
+    out = out + "  \"detail\": \"arena out of memory capacity exceeded\",\n";
+    out = out + "  \"remediation\": \"Add arena capacity guard `if arena_remaining(arena) < alloc_size { return Err(\\\"arena out of memory\\\"); }` or expand initial arena size via arena_create() at core/alloc/arena.oo:88:12.\"\n";
+    out = out + "}";
+    return out;
+}
+
+pub fn crash_fixture_sigbus_json() -> String {
+    let mut out: String = "{\n";
+    out = out + "  \"schema_version\": \"1.0.0\",\n";
+    out = out + "  \"crash_signal\": 7,\n";
+    out = out + "  \"signal_name\": \"SIGBUS\",\n";
+    out = out + "  \"fault_address\": \"0x000055555556a003\",\n";
+    out = out + "  \"failure_coordinate\": \"core/mem/buffer.oo:64:8:buffer_read_u64\",\n";
+    out = out + "  \"root_cause\": \"BUS_ERROR\",\n";
+    out = out + "  \"description\": \"Non-existent physical address access or misaligned memory access at 0x000055555556a003.\",\n";
+    out = out + "  \"rip\": \"0x000055555556e420\",\n";
+    out = out + "  \"rsp\": \"0x00007fffffffe150\",\n";
+    out = out + "  \"rbp\": \"0x00007fffffffe180\",\n";
+    out = out + "  \"capability_trap\": false,\n";
+    out = out + "  \"cap_mask_required\": 0,\n";
+    out = out + "  \"cap_mask_held\": 0,\n";
+    out = out + "  \"remediation\": \"Add memory alignment guard `if (addr & (align - 1)) != 0 { return Err(\\\"misaligned memory access\\\"); }` at core/mem/buffer.oo:64:8 before memory load or store.\"\n";
+    out = out + "}";
+    return out;
+}
+
+pub fn crash_fixture_sigill_json() -> String {
+    let mut out: String = "{\n";
+    out = out + "  \"schema_version\": \"1.0.0\",\n";
+    out = out + "  \"crash_signal\": 4,\n";
+    out = out + "  \"signal_name\": \"SIGILL\",\n";
+    out = out + "  \"fault_address\": \"0x000055555556f890\",\n";
+    out = out + "  \"failure_coordinate\": \"core/cpu/dispatch.oo:31:4:dispatch_vector_op\",\n";
+    out = out + "  \"root_cause\": \"ILLEGAL_INSTRUCTION\",\n";
+    out = out + "  \"description\": \"CPU attempted to decode an invalid, privileged, or malformed instruction opcode.\",\n";
+    out = out + "  \"rip\": \"0x000055555556f890\",\n";
+    out = out + "  \"rsp\": \"0x00007fffffffe100\",\n";
+    out = out + "  \"rbp\": \"0x00007fffffffe130\",\n";
+    out = out + "  \"capability_trap\": false,\n";
+    out = out + "  \"cap_mask_required\": 0,\n";
+    out = out + "  \"cap_mask_held\": 0,\n";
+    out = out + "  \"remediation\": \"Add CPU feature guard `if !cpu_supports_feature(flag) { return Err(\\\"unsupported instruction opcode\\\"); }` at core/cpu/dispatch.oo:31:4 before dispatching instruction.\"\n";
+    out = out + "}";
+    return out;
+}
+
+pub fn crash_fixture_sigabrt_json() -> String {
+    let mut out: String = "{\n";
+    out = out + "  \"schema_version\": \"1.0.0\",\n";
+    out = out + "  \"crash_signal\": 6,\n";
+    out = out + "  \"signal_name\": \"SIGABRT\",\n";
+    out = out + "  \"fault_address\": \"0x0000000000000000\",\n";
+    out = out + "  \"failure_coordinate\": \"core/contract/assert.oo:15:3:assert_positive\",\n";
+    out = out + "  \"root_cause\": \"ABORT_TRIGGERED\",\n";
+    out = out + "  \"description\": \"Process called abort() following unrecoverable contract violation or failed assertion.\",\n";
+    out = out + "  \"rip\": \"0x000055555556d010\",\n";
+    out = out + "  \"rsp\": \"0x00007fffffffe090\",\n";
+    out = out + "  \"rbp\": \"0x00007fffffffe0c0\",\n";
+    out = out + "  \"capability_trap\": false,\n";
+    out = out + "  \"cap_mask_required\": 0,\n";
+    out = out + "  \"cap_mask_held\": 0,\n";
+    out = out + "  \"remediation\": \"Verify contract invariants and assertion preconditions with guard `if !precondition { return Err(\\\"precondition violation\\\"); }` at core/contract/assert.oo:15:3.\"\n";
+    out = out + "}";
+    return out;
+}

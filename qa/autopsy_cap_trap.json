@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0.0",
+  "crash_signal": 6,
+  "signal_name": "SIGABRT",
+  "fault_address": "0x0000000000000000",
+  "failure_coordinate": "sec/cap/cap_require.oo:18:2:cap_require",
+  "root_cause": "CAPABILITY_TRAP_VIOLATION",
+  "description": "Execution attempted ungranted capability access without holding required capability token.",
+  "rip": "0x000055555556d300",
+  "rsp": "0x00007fffffffe180",
+  "rbp": "0x00007fffffffe1b0",
+  "capability_trap": true,
+  "cap_mask_required": 5,
+  "cap_mask_held": 1,
+  "remediation": "Add capability guard `if (caps & mask) != mask { return Err(\"missing capability\"); }` or grant required capability token in signature at sec/cap/cap_require.oo:18:2."
+}

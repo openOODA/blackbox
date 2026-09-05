@@ -5,13 +5,13 @@
 // Setup: Pure predicate verifier. Enforces ASD-STE100 headers and line count ceiling.
 //
 // Beats:
-//   1. Delegate to verify_surface().
+//   1. Delegate to verify_surface_run(p, fs, fw, env).
 //   2. Exit 0 on success.
 
 import "verify_surface.oo";
 
-pub fn main(&fs: FsReadCap, args: List[String]) -> Result[Int, String] {
-    let res: Result[Int, String] = verify_surface();
+pub fn main(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap, args: List[String]) -> Result[Int, String] {
+    let res: Result[Int, String] = verify_surface_run(p, fs, fw, env);
     if res.is_err() {
         let e: String = match res { Ok(_) => "", Err(msg) => msg };
         println("ERR verification failed: " + e);

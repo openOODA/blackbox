@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0.0",
+  "crash_signal": 6,
+  "signal_name": "SIGABRT",
+  "fault_address": "0x00007fffdead0000",
+  "failure_coordinate": "core/alloc/arena.oo:88:12:arena_alloc_chunk",
+  "root_cause": "ARENA_MEMORY_EXHAUSTION",
+  "description": "Process aborted due to arena memory exhaustion or heap capacity limit reached.",
+  "rip": "0x000055555556b100",
+  "rsp": "0x00007fffffffe190",
+  "rbp": "0x00007fffffffe1c0",
+  "capability_trap": false,
+  "cap_mask_required": 0,
+  "cap_mask_held": 0,
+  "detail": "arena out of memory capacity exceeded",
+  "remediation": "Add arena capacity guard `if arena_remaining(arena) < alloc_size { return Err(\"arena out of memory\"); }` or expand initial arena size via arena_create() at core/alloc/arena.oo:88:12."
+}

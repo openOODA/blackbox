@@ -1,32 +1,104 @@
 // # Root Cause Classifier
 //
-// Logline: Classifies crash signals and capability traps into canonical failure modes and remediations.
+// Logline: Classifies crash signals, arena memory exhaustion, and capability traps into canonical remediations.
 //
 // Setup: Maps substrate signals, trapped capability flags, and fault addresses into root causes.
 //
 // Beats:
-//   1. Classify crash signal and fault address into canonical root cause tokens.
+//   1. Classify crash signal, arena markers, and fault address into canonical root cause tokens.
 //   2. Map signal numbers to POSIX signal names and friendly descriptions.
 //   3. Generate human-readable and agent-readable root cause explanations.
-//   4. Emit 1-turn prescriptive remediation actions for AI agent consumption.
+//   4. Emit 1-turn prescriptive remediation actions with patch guards and exact coordinates.
 
 pub fn root_cause_null_ptr() -> String { return "NULL_POINTER_DEREFERENCE"; }
 pub fn root_cause_cap_trap() -> String { return "CAPABILITY_TRAP_VIOLATION"; }
+pub fn root_cause_arena_exhaustion() -> String { return "ARENA_MEMORY_EXHAUSTION"; }
 pub fn root_cause_unhandled_signal() -> String { return "UNHANDLED_SIGNAL"; }
 pub fn root_cause_abort() -> String { return "ABORT_TRIGGERED"; }
 pub fn root_cause_bus_error() -> String { return "BUS_ERROR"; }
 pub fn root_cause_illegal_instr() -> String { return "ILLEGAL_INSTRUCTION"; }
 pub fn root_cause_div_zero() -> String { return "DIVIDE_BY_ZERO"; }
 
+pub fn cap_calc_missing(required: Int, held: Int) -> Int {
+    let mut missing: Int = 0;
+    if (required / 1) % 2 == 1 && (held / 1) % 2 == 0 { missing = missing + 1; }
+    if (required / 2) % 2 == 1 && (held / 2) % 2 == 0 { missing = missing + 2; }
+    if (required / 4) % 2 == 1 && (held / 4) % 2 == 0 { missing = missing + 4; }
+    if (required / 8) % 2 == 1 && (held / 8) % 2 == 0 { missing = missing + 8; }
+    return missing;
+}
+
+pub fn cap_name_for_bit(bit: Int) -> String {
+    if bit == 1 { return "&FsReadCap"; }
+    if bit == 2 { return "&FsWriteCap"; }
+    if bit == 4 { return "&ProcessCap"; }
+    if bit == 8 { return "&EnvCap"; }
+    return "&UnknownCap";
+}
+
+fn str_to_lower(s: String) -> String {
+    let n: Int = chars_len(s);
+    let mut out: String = "";
+    let mut i: Int = 0;
+    while i < n {
+        let c: String = char_at(s, i);
+        if c == "A" { out = out + "a"; }
+        else if c == "B" { out = out + "b"; }
+        else if c == "C" { out = out + "c"; }
+        else if c == "D" { out = out + "d"; }
+        else if c == "E" { out = out + "e"; }
+        else if c == "F" { out = out + "f"; }
+        else if c == "G" { out = out + "g"; }
+        else if c == "H" { out = out + "h"; }
+        else if c == "I" { out = out + "i"; }
+        else if c == "J" { out = out + "j"; }
+        else if c == "K" { out = out + "k"; }
+        else if c == "L" { out = out + "l"; }
+        else if c == "M" { out = out + "m"; }
+        else if c == "N" { out = out + "n"; }
+        else if c == "O" { out = out + "o"; }
+        else if c == "P" { out = out + "p"; }
+        else if c == "Q" { out = out + "q"; }
+        else if c == "R" { out = out + "r"; }
+        else if c == "S" { out = out + "s"; }
+        else if c == "T" { out = out + "t"; }
+        else if c == "U" { out = out + "u"; }
+        else if c == "V" { out = out + "v"; }
+        else if c == "W" { out = out + "w"; }
+        else if c == "X" { out = out + "x"; }
+        else if c == "Y" { out = out + "y"; }
+        else if c == "Z" { out = out + "z"; }
+        else { out = out + c; }
+        i = i + 1;
+    }
+    return out;
+}
+
+pub fn is_arena_oom_marker(detail: String) -> Bool {
+    if chars_len(detail) == 0 { return false; }
+    let low: String = str_to_lower(detail);
+    if str_index_of(low, "arena") >= 0 { return true; }
+    if str_index_of(low, "oom") >= 0 { return true; }
+    if str_index_of(low, "exhaust") >= 0 { return true; }
+    if str_index_of(low, "capacity") >= 0 { return true; }
+    return false;
+}
+
 pub fn root_cause_classify(sig: Int, addr: String, cap_trapped: Bool, detail: String) -> String {
     if cap_trapped {
         return root_cause_cap_trap();
     }
+    if sig == 6 {
+        if is_arena_oom_marker(detail) {
+            return root_cause_arena_exhaustion();
+        }
+        return root_cause_abort();
+    }
+    if is_arena_oom_marker(detail) {
+        return root_cause_arena_exhaustion();
+    }
     if sig == 11 {
         return root_cause_null_ptr();
-    }
-    if sig == 6 {
-        return root_cause_abort();
     }
     if sig == 7 {
         return root_cause_bus_error();
@@ -66,6 +138,9 @@ pub fn root_cause_description(cause: String, addr: String) -> String {
     if cause == "CAPABILITY_TRAP_VIOLATION" {
         return "Execution attempted ungranted capability access without holding required capability token.";
     }
+    if cause == "ARENA_MEMORY_EXHAUSTION" {
+        return "Process memory arena exhausted allocated capacity during allocation request.";
+    }
     if cause == "ABORT_TRIGGERED" {
         return "Process called abort() following unrecoverable contract violation or failed assertion.";
     }
@@ -83,13 +158,25 @@ pub fn root_cause_description(cause: String, addr: String) -> String {
 
 pub fn root_cause_remediation(cause: String, coord_str: String) -> String {
     if cause == "NULL_POINTER_DEREFERENCE" {
-        return "Add a null-check guard `if ptr == 0 { return Err(\"null arena\"); }` at " + coord_str + " before accessing struct fields.";
+        return "Add a null-check guard `if ptr == 0 { return Err(\"null pointer dereference\"); }` at " + coord_str + " before accessing struct fields.";
     }
     if cause == "CAPABILITY_TRAP_VIOLATION" {
-        return "Grant the required capability token in caller signature or verify capability attenuation bounds at " + coord_str + ".";
+        return "Add capability guard `if (caps & mask) != mask { return Err(\"missing capability\"); }` or grant required capability token in signature at " + coord_str + ".";
+    }
+    if cause == "ARENA_MEMORY_EXHAUSTION" {
+        return "Add arena capacity guard `if arena_remaining(arena) < alloc_size { return Err(\"arena out of memory\"); }` or expand initial arena size via arena_create() at " + coord_str + ".";
+    }
+    if cause == "BUS_ERROR" {
+        return "Add memory alignment guard `if (addr & (align - 1)) != 0 { return Err(\"misaligned memory access\"); }` at " + coord_str + " before memory load or store.";
+    }
+    if cause == "ILLEGAL_INSTRUCTION" {
+        return "Add CPU feature guard `if !cpu_supports_feature(flag) { return Err(\"unsupported instruction opcode\"); }` at " + coord_str + " before dispatching instruction.";
+    }
+    if cause == "DIVIDE_BY_ZERO" {
+        return "Add divisor guard `if divisor == 0 { return Err(\"division by zero\"); }` at " + coord_str + " before arithmetic division.";
     }
     if cause == "ABORT_TRIGGERED" {
-        return "Verify contract invariants and assertion preconditions at " + coord_str + ".";
+        return "Verify contract invariants and assertion preconditions with guard `if !precondition { return Err(\"precondition violation\"); }` at " + coord_str + ".";
     }
     return "Inspect call stack and add defensive boundary validation at " + coord_str + ".";
 }

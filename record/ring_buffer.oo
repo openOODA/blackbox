@@ -1,0 +1,172 @@
+// # In-Memory Telemetry Ring Buffer
+//
+// Logline: Circular in-memory telemetry buffer with overwrite and dual-buffer snapshotting.
+//
+// Setup: Pure memory structures. Fail-closed on invalid capacity. Zero heap leakage.
+//
+// Beats:
+//   1. Declare RingBuffer and DualRingBuffer structs.
+//   2. Implement circular insertion, capacity clamping, and list_set overwrite.
+//   3. Implement ordered chronological extraction and JSON serialization.
+//   4. Implement dual ring buffer recording, swapping, and snapshot access.
+
+import "event_record.oo";
+
+type RingBuffer = struct {
+    capacity: Int,
+    head: Int,
+    count: Int,
+    events: List[EventRecord]
+};
+
+type DualRingBuffer = struct {
+    primary: RingBuffer,
+    secondary: RingBuffer,
+    active_id: Int
+};
+
+pub fn ring_buffer_new(capacity: Int) -> RingBuffer {
+    let cap: Int = if capacity <= 0 { 128 } else { capacity };
+    let empty: List[EventRecord] = list_new();
+    return RingBuffer {
+        capacity: cap,
+        head: 0,
+        count: 0,
+        events: empty
+    };
+}
+
+pub fn ring_buffer_len(rb: RingBuffer) -> Int {
+    if rb.count < rb.capacity {
+        return rb.count;
+    }
+    return rb.capacity;
+}
+
+pub fn ring_buffer_total(rb: RingBuffer) -> Int {
+    return rb.count;
+}
+
+pub fn ring_buffer_push(rb: RingBuffer, ev: EventRecord) -> RingBuffer {
+    let cap: Int = if rb.capacity <= 0 { 128 } else { rb.capacity };
+    let cur_len: Int = list_len(rb.events);
+    let mut evs: List[EventRecord] = rb.events;
+    if cur_len < cap {
+        evs = list_push(evs, ev);
+    } else {
+        evs = list_set(evs, rb.head, ev);
+    }
+    let next_head: Int = (rb.head + 1) % cap;
+    let next_count: Int = rb.count + 1;
+    return RingBuffer {
+        capacity: cap,
+        head: next_head,
+        count: next_count,
+        events: evs
+    };
+}
+
+pub fn ring_buffer_get_ordered(rb: RingBuffer, idx: Int) -> EventRecord {
+    let len: Int = ring_buffer_len(rb);
+    if idx < 0 || idx >= len {
+        return event_record_new(0, 0, 0, "", 0);
+    }
+    let slot: Int = if rb.count < rb.capacity {
+        idx
+    } else {
+        (rb.head + idx) % rb.capacity
+    };
+    return list_get(rb.events, slot);
+}
+
+pub fn ring_buffer_to_list(rb: RingBuffer) -> List[EventRecord] {
+    let mut out: List[EventRecord] = list_new();
+    let len: Int = ring_buffer_len(rb);
+    let mut i: Int = 0;
+    while i < len {
+        let ev: EventRecord = ring_buffer_get_ordered(rb, i);
+        out = list_push(out, ev);
+        i = i + 1;
+    }
+    return out;
+}
+
+pub fn ring_buffer_to_json(rb: RingBuffer) -> String {
+    let s_cap: String = rb.capacity.to_string();
+    let tot: Int = ring_buffer_total(rb);
+    let s_tot: String = tot.to_string();
+    let mut out: String = "{";
+    out = out + "\"schema_version\":\"1.0.0\",";
+    out = out + "\"capacity\":" + s_cap + ",";
+    out = out + "\"total_events\":" + s_tot + ",";
+    out = out + "\"events\":[";
+    let len: Int = ring_buffer_len(rb);
+    let mut i: Int = 0;
+    while i < len {
+        let ev: EventRecord = ring_buffer_get_ordered(rb, i);
+        let ev_json: String = event_record_to_json(ev);
+        if i > 0 {
+            out = out + ",";
+        }
+        out = out + ev_json;
+        i = i + 1;
+    }
+    out = out + "]}";
+    return out;
+}
+
+pub fn dual_ring_buffer_new(capacity: Int) -> DualRingBuffer {
+    let cap: Int = if capacity <= 0 { 128 } else { capacity };
+    return DualRingBuffer {
+        primary: ring_buffer_new(cap),
+        secondary: ring_buffer_new(cap),
+        active_id: 0
+    };
+}
+
+pub fn dual_ring_buffer_record(drb: DualRingBuffer, ev: EventRecord) -> DualRingBuffer {
+    if drb.active_id == 0 {
+        let p: RingBuffer = ring_buffer_push(drb.primary, ev);
+        return DualRingBuffer {
+            primary: p,
+            secondary: drb.secondary,
+            active_id: drb.active_id
+        };
+    }
+    let s: RingBuffer = ring_buffer_push(drb.secondary, ev);
+    return DualRingBuffer {
+        primary: drb.primary,
+        secondary: s,
+        active_id: drb.active_id
+    };
+}
+
+pub fn dual_ring_buffer_swap(drb: DualRingBuffer) -> DualRingBuffer {
+    let cap: Int = drb.primary.capacity;
+    if drb.active_id == 0 {
+        return DualRingBuffer {
+            primary: drb.primary,
+            secondary: ring_buffer_new(cap),
+            active_id: 1
+        };
+    }
+    return DualRingBuffer {
+        primary: ring_buffer_new(cap),
+        secondary: drb.secondary,
+        active_id: 0
+    };
+}
+
+pub fn dual_ring_buffer_active(drb: DualRingBuffer) -> RingBuffer {
+    if drb.active_id == 0 {
+        return drb.primary;
+    }
+    return drb.secondary;
+}
+
+pub fn dual_ring_buffer_snapshot(drb: DualRingBuffer) -> RingBuffer {
+    if drb.active_id == 0 {
+        return drb.secondary;
+    }
+    return drb.primary;
+}

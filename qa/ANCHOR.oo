@@ -1,13 +1,16 @@
 // # Blackbox QA Subsystem Front Door
 //
-// Logline: Re-exports crash fixtures and double-run proofs. cli_proof.oo is a standalone main.
+// Logline: Re-exports crash fixtures, verification proofs, and double-run invariant tests.
 //
 // Setup: Fails closed on any parse failure, classification defect, or output drift.
 //
 // Beats:
-//   1. Re-export crash fixture verification proofs.
-//   2. Re-export double-run determinism invariant proofs.
-//   3. Provide package self-test drivers.
+//   1. Re-export canonical JSON crash fixture generators.
+//   2. Re-export crash fixture verification proofs.
+//   3. Re-export double-run determinism invariant proofs.
+//   4. Re-export MCP diagnostic server integration proofs.
 
+import "crash_fixtures.oo";
 import "crash_fixture_proof.oo";
 import "double_run_proof.oo";
+import "mcp_proof.oo";

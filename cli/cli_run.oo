@@ -1,29 +1,32 @@
 // # Blackbox CLI Dispatch
 //
-// Logline: Routes autopsy, diff, and trace under Ocaps. Fail closed on missing inputs.
+// Logline: Routes autopsy, diff, inspect, trace, and mcp under Ocaps. Fail closed on missing inputs.
 //
-// Setup: ProcessCap, FsReadCap, EnvCap. Compiler from OODA_COMPILER or OODAC_BIN.
+// Setup: ProcessCap, FsReadCap, FsWriteCap, EnvCap. Compiler from env.
 //
 // Beats:
-//   1. Print usage that lists autopsy|diff|trace.
+//   1. Print usage that lists autopsy|diff|inspect|trace|mcp.
 //   2. Autopsy reads JSON under FsReadCap and prints a diagnosis.
 //   3. Diff locates oodac and runs tokens.
-//   4. Trace prints a written flight log or ERR.
+//   4. Trace reads flight log; mcp runs standalone stdio server.
 
 import "autopsy/report_formatter.oo";
 import "diff/ast_diff.oo";
 import "diff/compiler_runner.oo";
 import "bridge/dir_watcher.oo";
+import "bridge/mcp_server.oo";
+import "record/flight_log.oo";
 import "cli_inspect.oo";
 
 pub fn cli_help() -> String {
-    let mut out: String = "Usage: blackbox autopsy|diff|inspect|trace [args...]\n\n";
+    let mut out: String = "Usage: blackbox autopsy|diff|inspect|trace|mcp [args...]\n\n";
     out = out + "Subcommands:\n";
     out = out + "  autopsy [path]                 Parse autopsy JSON and print a 1-turn diagnosis\n";
     out = out + "  diff <file.oo>                 Run oodac tokens (OODA_COMPILER or OODAC_BIN)\n";
     out = out + "  inspect tokens|check|emit-c|build <file.oo>\n";
     out = out + "                                 Run a live oodac stage and print child text\n";
     out = out + "  trace                          Print a written flight log if one exists\n";
+    out = out + "  mcp --stdio                    Start standalone JSON-RPC 2.0 MCP server\n";
     out = out + "  version                        Display blackbox version\n";
     out = out + "  help                           Display this usage guide\n";
     return out;
@@ -94,7 +97,13 @@ pub fn cli_run_trace(fs: &FsReadCap) -> Result[Int, String] {
         return cli_err(e);
     }
     let text: String = match rd { Ok(s) => s, Err(_) => "" };
-    println(text);
+    let formatted: Result[String, String] = flight_format_from_json(text);
+    if formatted.is_err() {
+        let e2: String = match formatted { Ok(_) => "", Err(m) => m };
+        return cli_err(e2);
+    }
+    let output: String = match formatted { Ok(s) => s, Err(_) => "" };
+    println(output);
     return Ok(0);
 }
 
@@ -123,6 +132,23 @@ pub fn cli_dispatch(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCa
     }
     if subcmd == "trace" {
         return cli_run_trace(fs);
+    }
+    if subcmd == "mcp" {
+        let mut has_stdio: Bool = false;
+        let mut i: Int = 1;
+        while i < n {
+            let a: String = list_get(args, i);
+            if a == "--stdio" {
+                has_stdio = true;
+            } else {
+                return cli_err("unknown mcp flag: " + a);
+            }
+            i = i + 1;
+        }
+        if !has_stdio {
+            return cli_err("mcp subcommand requires --stdio flag");
+        }
+        return mcp_server_run_stdio(p, fs, fw, env);
     }
     if subcmd == "version" { println("openOODA blackbox v0.1.0"); return Ok(0); }
     if subcmd == "--version" { println("openOODA blackbox v0.1.0"); return Ok(0); }

@@ -7,7 +7,7 @@
 // Beats:
 //   1. Declare FailureCoordinate struct fields.
 //   2. Parse raw coordinate string into file, line, col, and function name.
-//   3. Format FailureCoordinate into agent-friendly presentation string.
+//   3. Format FailureCoordinate into agent presentation and exact source coordinates.
 //   4. Validate whether a coordinate contains valid non-empty file and line values.
 
 type FailureCoordinate = struct {
@@ -116,3 +116,13 @@ pub fn coordinate_is_valid(c: FailureCoordinate) -> Bool {
     }
     return false;
 }
+
+pub fn coordinate_format_source(c: FailureCoordinate) -> String {
+    let fp: String = c.file_path;
+    let ln: Int = c.line_num;
+    let col: Int = c.col_num;
+    let s_ln: String = ln.to_string();
+    let s_col: String = if col > 0 { col.to_string() } else { "1" };
+    return fp + ":" + s_ln + ":" + s_col;
+}
+

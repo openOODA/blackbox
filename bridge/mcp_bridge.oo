@@ -1,22 +1,23 @@
 // # Model Context Protocol Bridge
 //
-// Logline: Exposes blackbox autopsy and compiler inspect as MCP tool endpoints.
+// Logline: Exposes blackbox autopsy, compiler diff, and flight trace as MCP tool endpoints.
 //
 // Setup: Declares tool count, capability bitmasks, and dispatch. Compiler from env only.
 //
 // Beats:
-//   1. Expose MCP tool catalog entries for blackbox_autopsy and blackbox_diff.
+//   1. Expose MCP tool catalog entries for autopsy, diff, and trace.
 //   2. Define required capability bitmasks (FsReadCap mask 1, ProcessCap mask 5).
-//   3. Dispatch tools/call to autopsy formatter or tokens inspect.
-//   4. Fail closed on missing compiler. No Result unwrap.
+//   3. Dispatch tools/call to autopsy formatter, tokens inspect, or flight log.
+//   4. Fail closed on missing compiler or unreadable files.
 
 import "autopsy/report_formatter.oo";
 import "diff/ast_diff.oo";
 import "diff/compiler_runner.oo";
+import "record/flight_log.oo";
 import "dir_watcher.oo";
 
 pub fn blackbox_mcp_tool_count() -> Int {
-    return 2;
+    return 3;
 }
 
 pub fn blackbox_mcp_tool_caps(name: String) -> Int {
@@ -26,6 +27,9 @@ pub fn blackbox_mcp_tool_caps(name: String) -> Int {
     if name == "blackbox_diff" {
         return 5;
     }
+    if name == "blackbox_trace" {
+        return 1;
+    }
     return 0 - 1;
 }
 
@@ -33,10 +37,13 @@ pub fn blackbox_mcp_tool_list_json() -> String {
     let mut out: String = "[";
     out = out + "{\"name\":\"blackbox_autopsy\",";
     out = out + "\"description\":\"Parse autopsy JSON and output 1-turn root-cause diagnosis\",";
-    out = out + "\"inputSchema\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"Path to autopsy.json\"}},\"required\":[]}},";
+    out = out + "\"inputSchema\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"Path to autopsy.json\"}},\"required\":[]},\"requiresCap\":1},";
     out = out + "{\"name\":\"blackbox_diff\",";
     out = out + "\"description\":\"Run oodac tokens on a source file and display the dump\",";
-    out = out + "\"inputSchema\":{\"type\":\"object\",\"properties\":{\"file\":{\"type\":\"string\",\"description\":\"Path to .oo file\"}},\"required\":[\"file\"]}}";
+    out = out + "\"inputSchema\":{\"type\":\"object\",\"properties\":{\"file\":{\"type\":\"string\",\"description\":\"Path to .oo file\"}},\"required\":[\"file\"]},\"requiresCap\":5},";
+    out = out + "{\"name\":\"blackbox_trace\",";
+    out = out + "\"description\":\"Read and format active flight execution telemetry stream\",";
+    out = out + "\"inputSchema\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"Path to flight.json\"}},\"required\":[]},\"requiresCap\":1}";
     out = out + "]";
     return out;
 }
@@ -145,6 +152,26 @@ pub fn blackbox_mcp_dispatch(name: String, args: String, fs: &FsReadCap, p: &Pro
         }
         let dump: String = match dr { Ok(s) => s, Err(_) => "" };
         return blackbox_mcp_wrap_text(dump);
+    }
+
+    if name == "blackbox_trace" {
+        let mut pth: String = mcp_extract_arg(args, "path");
+        if chars_len(pth) == 0 {
+            pth = dir_watcher_flight_file();
+        }
+        let rd: Result[String, String] = dir_watcher_read_flight(fs, pth);
+        if rd.is_err() {
+            let e: String = match rd { Ok(_) => "", Err(m) => m };
+            return mcp_err("Failed to read flight log: " + e);
+        }
+        let raw: String = match rd { Ok(s) => s, Err(_) => "" };
+        let fmt: Result[String, String] = flight_format_from_json(raw);
+        if fmt.is_err() {
+            let e2: String = match fmt { Ok(_) => "", Err(m) => m };
+            return mcp_err("Failed to parse flight log: " + e2);
+        }
+        let text: String = match fmt { Ok(s) => s, Err(_) => "" };
+        return blackbox_mcp_wrap_text(text);
     }
 
     return mcp_err("Unknown tool: " + name);

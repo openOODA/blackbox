@@ -1,0 +1,198 @@
+// # MCP Stdio Server
+//
+// Logline: Encapsulate JSON-RPC 2.0 stdio server loop for blackbox mcp --stdio.
+//
+// Setup: Pure .oo framing and method dispatch. Enforces capability bitmasks fail-closed.
+//
+// Beats:
+//   1. Parse Content-Length and newline-delimited JSON-RPC wire frames.
+//   2. Extract request identifiers, methods, and parameter payloads.
+//   3. Dispatch initialize, ping, tools/list, tools/call, shutdown, and exit.
+//   4. Enforce required capability bitmasks before dispatching tool execution.
+
+import "mcp_bridge.oo";
+
+pub type McpServerFrame = struct {
+    ok: Bool,
+    is_cl: Bool,
+    body: String,
+    rest: String
+};
+
+fn json_val(json: String, key: String, raw: Bool) -> String {
+    let pat: String = "\"" + key + "\"";
+    let n: Int = chars_len(json);
+    let plen: Int = chars_len(pat);
+    let mut i: Int = 0;
+    while i + plen <= n {
+        if str_slice(json, i, i + plen) == pat {
+            let mut j: Int = i + plen;
+            while j < n && char_at(json, j) != ":" { j = j + 1; }
+            j = j + 1;
+            while j < n && (char_at(json, j) == " " || char_at(json, j) == "\t" || char_at(json, j) == "\n" || char_at(json, j) == "\r") { j = j + 1; }
+            if j >= n { return ""; }
+            let c0: String = char_at(json, j);
+            if c0 == "\"" {
+                let mut k: Int = j + 1;
+                while k < n {
+                    let c: String = char_at(json, k);
+                    if c == "\\" { k = k + 1; }
+                    else if c == "\"" { return if raw { str_slice(json, j, k + 1) } else { str_slice(json, j + 1, k) }; }
+                    k = k + 1;
+                }
+                return "";
+            }
+            if c0 == "{" || c0 == "[" {
+                let close: String = if c0 == "{" { "}" } else { "]"; };
+                let mut d: Int = 0;
+                let mut in_s: Bool = false;
+                let mut k: Int = j;
+                while k < n {
+                    let c: String = char_at(json, k);
+                    if in_s {
+                        if c == "\\" { k = k + 1; } else if c == "\"" { in_s = false; }
+                    } else if c == "\"" { in_s = true; }
+                    else if c == c0 { d = d + 1; }
+                    else if c == close {
+                        d = d - 1;
+                        if d == 0 { return str_slice(json, j, k + 1); }
+                    }
+                    k = k + 1;
+                }
+                return "";
+            }
+            let mut k: Int = j;
+            while k < n && char_at(json, k) != "," && char_at(json, k) != "}" && char_at(json, k) != "]" && char_at(json, k) != " " && char_at(json, k) != "\n" && char_at(json, k) != "\r" && char_at(json, k) != "\t" { k = k + 1; }
+            return str_slice(json, j, k);
+        }
+        i = i + 1;
+    }
+    return "";
+}
+
+pub fn mcp_frame_take(buf: String) -> McpServerFrame {
+    let n: Int = chars_len(buf);
+    let mut i: Int = 0;
+    while i < n && (char_at(buf, i) == " " || char_at(buf, i) == "\t" || char_at(buf, i) == "\n" || char_at(buf, i) == "\r") { i = i + 1; }
+    if i >= n { return McpServerFrame { ok: false, is_cl: false, body: "", rest: "" }; }
+    let tail: String = str_slice(buf, i, n);
+    if str_starts_with(tail, "Content-Length:") {
+        let mut k: Int = 15;
+        let tn: Int = chars_len(tail);
+        while k < tn && (char_at(tail, k) == " " || char_at(tail, k) == "\t") { k = k + 1; }
+        let mut clen: Int = 0;
+        while k < tn {
+            let c: String = char_at(tail, k);
+            if !char_is_digit(c) { break; }
+            clen = clen * 10 + (byte_at(c, 0) - 48);
+            k = k + 1;
+        }
+        let crlf: Int = str_index_of(tail, "\r\n\r\n");
+        let lf: Int = str_index_of(tail, "\n\n");
+        let sep: Int = if crlf >= 0 { crlf } else { lf };
+        let sepn: Int = if crlf >= 0 { 4 } else { 2 };
+        if sep < 0 || clen < 1 { return McpServerFrame { ok: false, is_cl: false, body: "", rest: "" }; }
+        let start: Int = sep + sepn;
+        let tlen: Int = bytes_len(tail);
+        if start + clen > tlen { return McpServerFrame { ok: false, is_cl: false, body: "", rest: "" }; }
+        return McpServerFrame { ok: true, is_cl: true, body: byte_slice(tail, start, start + clen), rest: byte_slice(tail, start + clen, tlen) };
+    }
+    let c0: String = char_at(tail, 0);
+    if c0 == "{" || c0 == "[" {
+        let close: String = if c0 == "{" { "}" } else { "]"; };
+        let mut d: Int = 0;
+        let mut in_s: Bool = false;
+        let mut j: Int = 0;
+        let tlen: Int = chars_len(tail);
+        while j < tlen {
+            let c: String = char_at(tail, j);
+            if in_s {
+                if c == "\\" { j = j + 1; } else if c == "\"" { in_s = false; }
+            } else if c == "\"" { in_s = true; }
+            else if c == c0 { d = d + 1; }
+            else if c == close {
+                d = d - 1;
+                if d == 0 { return McpServerFrame { ok: true, is_cl: false, body: str_slice(tail, 0, j + 1), rest: str_slice(tail, j + 1, tlen) }; }
+            }
+            j = j + 1;
+        }
+        return McpServerFrame { ok: false, is_cl: false, body: "", rest: "" };
+    }
+    let nl: Int = str_index_of(tail, "\n");
+    if nl >= 0 {
+        return McpServerFrame { ok: true, is_cl: false, body: str_slice(tail, 0, nl), rest: str_slice(tail, nl + 1, chars_len(tail)) };
+    }
+    return McpServerFrame { ok: false, is_cl: false, body: "", rest: "" };
+}
+
+pub fn mcp_rpc_ok(id: String, result: String) -> String {
+    let id_str: String = if chars_len(id) == 0 { "null" } else { id };
+    return "{\"jsonrpc\":\"2.0\",\"id\":" + id_str + ",\"result\":" + result + "}";
+}
+
+pub fn mcp_rpc_err(id: String, code: Int, msg: String) -> String {
+    let id_str: String = if chars_len(id) == 0 { "null" } else { id };
+    return "{\"jsonrpc\":\"2.0\",\"id\":" + id_str + ",\"error\":{\"code\":" + code.to_string() + ",\"message\":\"" + blackbox_mcp_escape(msg) + "\"}}";
+}
+
+pub fn mcp_server_handle_request(body: String, caps_held: Int, fs: &FsReadCap, p: &ProcessCap, env: &EnvCap) -> String {
+    let blen: Int = chars_len(body);
+    if blen == 0 || char_at(body, 0) != "{" || char_at(body, blen - 1) != "}" || str_index_of(body, "\"jsonrpc\"") < 0 {
+        return mcp_rpc_err("", 0 - 32700, "Parse error");
+    }
+    let id: String = json_val(body, "id", true);
+    let method: String = json_val(body, "method", false);
+    let params: String = json_val(body, "params", true);
+
+    if method == "initialize" {
+        return mcp_rpc_ok(id, "{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"openOODA blackbox\",\"version\":\"0.1.0\"}}");
+    }
+    if method == "notifications/initialized" { return ""; }
+    if method == "ping" { return mcp_rpc_ok(id, "{}"); }
+    if method == "tools/list" { return mcp_rpc_ok(id, "{\"tools\":" + blackbox_mcp_tool_list_json() + "}"); }
+    if method == "tools/call" {
+        let name: String = json_val(params, "name", false);
+        let mut args: String = json_val(params, "arguments", true);
+        if chars_len(args) == 0 { args = "{}"; }
+        let req_caps: Int = blackbox_mcp_tool_caps(name);
+        if req_caps < 0 { return mcp_rpc_err(id, 0 - 32601, "Method not found: " + name); }
+        if (req_caps & caps_held) != req_caps {
+            return mcp_rpc_err(id, 0 - 32603, "missing required capability token for " + name);
+        }
+        return mcp_rpc_ok(id, blackbox_mcp_dispatch(name, args, fs, p, env));
+    }
+    if method == "shutdown" { return mcp_rpc_ok(id, "null"); }
+    if method == "exit" { return ""; }
+    return mcp_rpc_err(id, 0 - 32601, "Method not found");
+}
+
+pub fn mcp_server_run_stdio(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap) -> Result[Int, String] {
+    let _fw: &FsWriteCap = fw;
+    let caps_held: Int = 15;
+    let mut buf: String = "";
+    let mut frames: Int = 0;
+    let mut idle: Int = 0;
+    while true {
+        let fr: McpServerFrame = mcp_frame_take(buf);
+        if fr.ok {
+            buf = fr.rest;
+            idle = 0;
+            if chars_len(fr.body) == 0 { continue; }
+            frames = frames + 1;
+            if frames > 256 { return Err("frame cap 256"); }
+            if json_val(fr.body, "method", false) == "exit" { return Ok(0); }
+            let resp: String = mcp_server_handle_request(fr.body, caps_held, fs, p, env);
+            if chars_len(resp) > 0 {
+                if fr.is_cl { print("Content-Length: " + bytes_len(resp).to_string() + "\r\n\r\n" + resp); }
+                else { println(resp); }
+            }
+            continue;
+        }
+        if bytes_len(buf) > 1048576 { return Err("input exceeds 1MiB"); }
+        let r: Result[String, String] = oo_read_stdin_chunk(100);
+        if r.is_err() { idle = idle + 1; if idle > 3000 { return Ok(0); } continue; }
+        let chunk: String = match r { Ok(s) => s, Err(_) => "" };
+        if chars_len(chunk) == 0 { idle = idle + 1; if idle > 3000 { return Ok(0); } } else { buf = buf + chunk; idle = 0; }
+    }
+    return Ok(0);
+}

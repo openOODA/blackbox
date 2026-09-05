@@ -1,0 +1,174 @@
+// # MCP Diagnostic Server Proof
+//
+// Logline: Proves JSON-RPC 2.0 initialize, tools catalog, tool dispatch, capability enforcement, and double-run invariants.
+//
+// Setup: Exercises standalone MCP server without live stdio loop. Bitmask audits fail closed.
+//
+// Beats:
+//   1. Verify JSON-RPC initialize handshake, protocolVersion, serverInfo, and tools capability.
+//   2. Verify tools/list returns exactly 3 tools with valid schemas and requiresCap.
+//   3. Verify tools/call for blackbox_trace returns formatted flight stream or error.
+//   4. Verify tools/call for blackbox_autopsy on autopsy_null.json returns 1-turn report.
+//   5. Verify tools/call for blackbox_diff requires file argument and runs inspect.
+//   6. Verify capability rejection fails closed with -32603 when required cap is missing.
+//   7. Verify unknown JSON-RPC method returns -32601 Method not found.
+//   8. Verify double-run Run_1 == Run_2 determinism for tool catalog and dispatch.
+//   9. Run full MCP verification suite across all proofs.
+
+import "bridge/mcp_bridge.oo";
+import "bridge/mcp_server.oo";
+import "record/ring_buffer.oo";
+import "record/flight_log.oo";
+import "record/event_record.oo";
+
+fn mcp_call(body: String, caps: Int, fs: &FsReadCap, p: &ProcessCap, env: &EnvCap) -> String {
+    return mcp_server_handle_request(body, caps, fs, p, env);
+}
+
+pub fn proof_mcp_initialize(p: &ProcessCap, fs: &FsReadCap, env: &EnvCap) -> Result[Int, String] {
+    let req: String = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\"}}";
+    let resp: String = mcp_call(req, 15, fs, p, env);
+    if str_index_of(resp, "\"jsonrpc\":\"2.0\"") < 0 { return Err("proof_mcp_initialize: missing jsonrpc"); }
+    if str_index_of(resp, "\"id\":1") < 0 { return Err("proof_mcp_initialize: missing id"); }
+    if str_index_of(resp, "\"protocolVersion\":\"2024-11-05\"") < 0 { return Err("proof_mcp_initialize: missing protocolVersion"); }
+    if str_index_of(resp, "openOODA blackbox") < 0 { return Err("proof_mcp_initialize: missing serverInfo name"); }
+    if str_index_of(resp, "\"version\":\"0.1.0\"") < 0 { return Err("proof_mcp_initialize: missing serverInfo version"); }
+    if str_index_of(resp, "\"tools\"") < 0 { return Err("proof_mcp_initialize: missing tools capability"); }
+    return Ok(0);
+}
+
+pub fn proof_mcp_tools_list(p: &ProcessCap, fs: &FsReadCap, env: &EnvCap) -> Result[Int, String] {
+    if blackbox_mcp_tool_count() != 3 { return Err("proof_mcp_tools_list: tool count != 3"); }
+    if blackbox_mcp_tool_caps("blackbox_autopsy") != 1 { return Err("proof_mcp_tools_list: autopsy cap != 1"); }
+    if blackbox_mcp_tool_caps("blackbox_diff") != 5 { return Err("proof_mcp_tools_list: diff cap != 5"); }
+    if blackbox_mcp_tool_caps("blackbox_trace") != 1 { return Err("proof_mcp_tools_list: trace cap != 1"); }
+    if blackbox_mcp_tool_caps("unknown_tool") != 0 - 1 { return Err("proof_mcp_tools_list: unknown tool cap != -1"); }
+
+    let req: String = "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}";
+    let resp: String = mcp_call(req, 15, fs, p, env);
+    if str_index_of(resp, "\"tools\"") < 0 { return Err("proof_mcp_tools_list: missing tools array"); }
+    if str_index_of(resp, "blackbox_autopsy") < 0 { return Err("proof_mcp_tools_list: missing blackbox_autopsy"); }
+    if str_index_of(resp, "blackbox_diff") < 0 { return Err("proof_mcp_tools_list: missing blackbox_diff"); }
+    if str_index_of(resp, "blackbox_trace") < 0 { return Err("proof_mcp_tools_list: missing blackbox_trace"); }
+    if str_index_of(resp, "\"requiresCap\":1") < 0 { return Err("proof_mcp_tools_list: missing requiresCap 1"); }
+    if str_index_of(resp, "\"requiresCap\":5") < 0 { return Err("proof_mcp_tools_list: missing requiresCap 5"); }
+    return Ok(0);
+}
+
+pub fn proof_mcp_tools_call_trace(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap) -> Result[Int, String] {
+    let mut rb: RingBuffer = ring_buffer_new(8);
+    rb = ring_buffer_push(rb, event_record_new(1, 1, 1, "test trace flight event", 100));
+    let fl_res: Result[Int, String] = flight_flush_buffer(fw, rb);
+    if fl_res.is_ok() {
+        let req: String = "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"blackbox_trace\",\"arguments\":{}}}";
+        let resp: String = mcp_call(req, 15, fs, p, env);
+        if str_index_of(resp, "\"jsonrpc\":\"2.0\"") < 0 { return Err("proof_mcp_tools_call_trace: missing jsonrpc"); }
+        if str_index_of(resp, "test trace flight event") < 0 { return Err("proof_mcp_tools_call_trace: missing stream event"); }
+    } else {
+        let req_def: String = "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"blackbox_trace\",\"arguments\":{}}}";
+        let resp_def: String = mcp_call(req_def, 15, fs, p, env);
+        if str_index_of(resp_def, "\"jsonrpc\":\"2.0\"") < 0 { return Err("proof_mcp_tools_call_trace: missing jsonrpc"); }
+    }
+
+    let req_err: String = "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"blackbox_trace\",\"arguments\":{\"path\":\"../secret.json\"}}}";
+    let resp_err: String = mcp_call(req_err, 15, fs, p, env);
+    if str_index_of(resp_err, "isError") < 0 && str_index_of(resp_err, "rejected") < 0 {
+        return Err("proof_mcp_tools_call_trace: path traversal must fail closed");
+    }
+    return Ok(0);
+}
+
+pub fn proof_mcp_tools_call_autopsy(p: &ProcessCap, fs: &FsReadCap, env: &EnvCap) -> Result[Int, String] {
+    let req: String = "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"blackbox_autopsy\",\"arguments\":{\"path\":\"blackbox/qa/autopsy_null.json\"}}}";
+    let resp: String = mcp_call(req, 15, fs, p, env);
+    if str_index_of(resp, "\"jsonrpc\":\"2.0\"") < 0 { return Err("proof_mcp_tools_call_autopsy: missing jsonrpc"); }
+    if str_index_of(resp, "\"id\":5") < 0 { return Err("proof_mcp_tools_call_autopsy: missing id"); }
+    if str_index_of(resp, "BLACKBOX CRASH AUTOPSY") < 0 { return Err("proof_mcp_tools_call_autopsy: missing header"); }
+    if str_index_of(resp, "NULL_POINTER_DEREFERENCE") < 0 { return Err("proof_mcp_tools_call_autopsy: missing cause"); }
+    if str_index_of(resp, "core/alloc/arena.oo:42:5") < 0 { return Err("proof_mcp_tools_call_autopsy: missing coord"); }
+    return Ok(0);
+}
+
+pub fn proof_mcp_tools_call_diff(p: &ProcessCap, fs: &FsReadCap, env: &EnvCap) -> Result[Int, String] {
+    let req_err: String = "{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"tools/call\",\"params\":{\"name\":\"blackbox_diff\",\"arguments\":{}}}";
+    let resp_err: String = mcp_call(req_err, 15, fs, p, env);
+    if str_index_of(resp_err, "Missing required argument 'file'") < 0 && str_index_of(resp_err, "isError") < 0 {
+        return Err("proof_mcp_tools_call_diff: missing file must return error");
+    }
+
+    let req_ok: String = "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"tools/call\",\"params\":{\"name\":\"blackbox_diff\",\"arguments\":{\"file\":\"blackbox/qa/diff_sample.oo\"}}}";
+    let resp_ok: String = mcp_call(req_ok, 15, fs, p, env);
+    if str_index_of(resp_ok, "\"jsonrpc\":\"2.0\"") < 0 { return Err("proof_mcp_tools_call_diff: missing jsonrpc"); }
+    if str_index_of(resp_ok, "\"id\":7") < 0 { return Err("proof_mcp_tools_call_diff: missing id"); }
+    return Ok(0);
+}
+
+pub fn proof_mcp_capability_rejection(p: &ProcessCap, fs: &FsReadCap, env: &EnvCap) -> Result[Int, String] {
+    let req_diff: String = "{\"jsonrpc\":\"2.0\",\"id\":8,\"method\":\"tools/call\",\"params\":{\"name\":\"blackbox_diff\",\"arguments\":{\"file\":\"blackbox/qa/diff_sample.oo\"}}}";
+    let resp_diff: String = mcp_call(req_diff, 1, fs, p, env);
+    if str_index_of(resp_diff, "\"jsonrpc\":\"2.0\"") < 0 { return Err("proof_mcp_cap_rejection: missing jsonrpc"); }
+    if str_index_of(resp_diff, "\"id\":8") < 0 { return Err("proof_mcp_cap_rejection: missing id"); }
+    if str_index_of(resp_diff, "-32603") < 0 { return Err("proof_mcp_cap_rejection: expected code -32603"); }
+    if str_index_of(resp_diff, "missing required capability") < 0 { return Err("proof_mcp_cap_rejection: missing err text"); }
+
+    let req_auto: String = "{\"jsonrpc\":\"2.0\",\"id\":9,\"method\":\"tools/call\",\"params\":{\"name\":\"blackbox_autopsy\",\"arguments\":{\"path\":\"blackbox/qa/autopsy_null.json\"}}}";
+    let resp_auto: String = mcp_call(req_auto, 0, fs, p, env);
+    if str_index_of(resp_auto, "-32603") < 0 { return Err("proof_mcp_cap_rejection: mask 0 must fail with -32603"); }
+    return Ok(0);
+}
+
+pub fn proof_mcp_unknown_method(p: &ProcessCap, fs: &FsReadCap, env: &EnvCap) -> Result[Int, String] {
+    let req: String = "{\"jsonrpc\":\"2.0\",\"id\":10,\"method\":\"nonexistent_method\",\"params\":{}}";
+    let resp: String = mcp_call(req, 15, fs, p, env);
+    if str_index_of(resp, "\"jsonrpc\":\"2.0\"") < 0 { return Err("proof_mcp_unknown_method: missing jsonrpc"); }
+    if str_index_of(resp, "\"id\":10") < 0 { return Err("proof_mcp_unknown_method: missing id"); }
+    if str_index_of(resp, "-32601") < 0 { return Err("proof_mcp_unknown_method: expected code -32601"); }
+    if str_index_of(resp, "Method not found") < 0 { return Err("proof_mcp_unknown_method: missing Method not found"); }
+
+    let req_tool: String = "{\"jsonrpc\":\"2.0\",\"id\":11,\"method\":\"tools/call\",\"params\":{\"name\":\"nonexistent_tool\",\"arguments\":{}}}";
+    let resp_tool: String = mcp_call(req_tool, 15, fs, p, env);
+    if str_index_of(resp_tool, "-32601") < 0 { return Err("proof_mcp_unknown_method: unknown tool must return -32601"); }
+    return Ok(0);
+}
+
+pub fn proof_mcp_double_run(p: &ProcessCap, fs: &FsReadCap, env: &EnvCap) -> Result[Int, String] {
+    let l1: String = blackbox_mcp_tool_list_json();
+    let l2: String = blackbox_mcp_tool_list_json();
+    if l1 != l2 { return Err("proof_mcp_double_run: tool list drifted"); }
+
+    let a_args: String = "{\"path\":\"blackbox/qa/autopsy_null.json\"}";
+    let d1: String = blackbox_mcp_dispatch("blackbox_autopsy", a_args, fs, p, env);
+    let d2: String = blackbox_mcp_dispatch("blackbox_autopsy", a_args, fs, p, env);
+    if d1 != d2 { return Err("proof_mcp_double_run: autopsy dispatch drifted"); }
+
+    let req_list: String = "{\"jsonrpc\":\"2.0\",\"id\":12,\"method\":\"tools/list\",\"params\":{}}";
+    let s1: String = mcp_call(req_list, 15, fs, p, env);
+    let s2: String = mcp_call(req_list, 15, fs, p, env);
+    if s1 != s2 { return Err("proof_mcp_double_run: tools/list response drifted"); }
+
+    let req_cap: String = "{\"jsonrpc\":\"2.0\",\"id\":13,\"method\":\"tools/call\",\"params\":{\"name\":\"blackbox_diff\",\"arguments\":{\"file\":\"test.oo\"}}}";
+    let c1: String = mcp_call(req_cap, 1, fs, p, env);
+    let c2: String = mcp_call(req_cap, 1, fs, p, env);
+    if c1 != c2 { return Err("proof_mcp_double_run: cap rejection response drifted"); }
+    return Ok(0);
+}
+
+pub fn mcp_proof_run(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap) -> Result[Int, String] {
+    let r1: Result[Int, String] = proof_mcp_initialize(p, fs, env);
+    if r1.is_err() { return r1; }
+    let r2: Result[Int, String] = proof_mcp_tools_list(p, fs, env);
+    if r2.is_err() { return r2; }
+    let r3: Result[Int, String] = proof_mcp_tools_call_trace(p, fs, fw, env);
+    if r3.is_err() { return r3; }
+    let r4: Result[Int, String] = proof_mcp_tools_call_autopsy(p, fs, env);
+    if r4.is_err() { return r4; }
+    let r5: Result[Int, String] = proof_mcp_tools_call_diff(p, fs, env);
+    if r5.is_err() { return r5; }
+    let r6: Result[Int, String] = proof_mcp_capability_rejection(p, fs, env);
+    if r6.is_err() { return r6; }
+    let r7: Result[Int, String] = proof_mcp_unknown_method(p, fs, env);
+    if r7.is_err() { return r7; }
+    let r8: Result[Int, String] = proof_mcp_double_run(p, fs, env);
+    if r8.is_err() { return r8; }
+    return Ok(0);
+}
