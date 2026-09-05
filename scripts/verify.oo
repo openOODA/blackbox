@@ -78,7 +78,8 @@ pub fn verify_surface() -> Result[Int, String] {
 pub fn main(&fs: FsReadCap, args: List[String]) -> Result[Int, String] {
     let res: Result[Int, String] = verify_surface();
     if res.is_err() {
-        println("ERR verification failed: " + res.unwrap_err());
+        let e: String = match res { Ok(_) => "", Err(msg) => msg };
+        println("ERR verification failed: " + e);
         return res;
     }
     println("verify: blackbox surface OK");

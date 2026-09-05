@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0.0",
+  "crash_signal": 11,
+  "signal_name": "SIGSEGV",
+  "fault_address": "0x0000000000000000",
+  "failure_coordinate": "core/alloc/arena.oo:42:5:arena_alloc",
+  "root_cause": "NULL_POINTER_DEREFERENCE",
+  "description": "Unhandled dereference of null pointer at memory address 0x0.",
+  "rip": "0x000055555556a1b0",
+  "rsp": "0x00007fffffffe210",
+  "rbp": "0x00007fffffffe240",
+  "capability_trap": false,
+  "remediation": "Add a null-check guard `if ptr == 0 { return Err(\"null arena\"); }` at arena.oo:42 before accessing struct fields."
+}

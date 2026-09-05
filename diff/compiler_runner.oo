@@ -1,36 +1,77 @@
 // # Compiler Stage Runner
 //
-// Logline: Invokes oodac compiler inspection stages under ProcessCap to capture AST and token streams.
+// Logline: Locates oodac from env and runs the tokens stage under ProcessCap.
 //
-// Setup: Requires ProcessCap for subprocess execution. Uses sys_exec to run oodac stages.
+// Setup: OODA_COMPILER or OODAC_BIN only. No PATH hunt. tokens is the only stage.
 //
 // Beats:
-//   1. Resolve path to oodac compiler executable from environment or defaults.
-//   2. Invoke tokens, ast, outline, or reflect compiler stages.
-//   3. Capture standard output stream into structured result.
-//   4. Validate file existence and extension before invocation.
+//   1. Refuse empty, `..`, bare names, and shell metacharacters.
+//   2. Require the compiler path to exist under FsReadCap.
+//   3. Invoke tokens only. Residual stages fail closed.
+//   4. Capture stdout from sys_exec.
 
-pub fn compiler_default_bin() -> String {
-    return "oodac";
+pub fn compiler_path_ok(p: String) -> Bool {
+    if chars_len(p) == 0 { return false; }
+    if str_index_of(p, "..") >= 0 { return false; }
+    if str_index_of(p, "/") < 0 { return false; }
+    let n: Int = chars_len(p);
+    let mut i: Int = 0;
+    while i < n {
+        let c: String = char_at(p, i);
+        if c == ";" || c == "$" || c == "`" || c == "|" || c == "&" { return false; }
+        if c == "(" || c == ")" { return false; }
+        if c == " " || c == "\n" || c == "\r" || c == "\t" { return false; }
+        i = i + 1;
+    }
+    return true;
+}
+
+pub fn compiler_locate_from(fs: &FsReadCap, ooda_compiler: String, oodac_bin: String) -> Result[String, String] {
+    let mut p: String = ooda_compiler;
+    if chars_len(p) == 0 {
+        p = oodac_bin;
+    }
+    if chars_len(p) == 0 {
+        return Err("OODA_COMPILER or OODAC_BIN required");
+    }
+    if !compiler_path_ok(p) {
+        return Err("compiler path refused");
+    }
+    if !path_exists(fs, p) {
+        return Err("compiler missing: " + p);
+    }
+    return Ok(p);
+}
+
+pub fn compiler_locate(fs: &FsReadCap, env: &EnvCap) -> Result[String, String] {
+    let r1: Result[String, String] = env_get(env, "OODA_COMPILER");
+    let a: String = match r1 { Ok(s) => s, Err(_) => "" };
+    let r2: Result[String, String] = env_get(env, "OODAC_BIN");
+    let b: String = match r2 { Ok(s) => s, Err(_) => "" };
+    return compiler_locate_from(fs, a, b);
+}
+
+pub fn compiler_stage_ok(stage: String) -> Bool {
+    return stage == "tokens";
 }
 
 pub fn compiler_run_stage(p: &ProcessCap, bin: String, stage: String, file_path: String) -> Result[String, String] {
     if chars_len(file_path) == 0 {
         return Err("compiler_run_stage: empty file path");
     }
-    let compiler: String = if chars_len(bin) > 0 { bin } else { compiler_default_bin() };
-    let r: Result[String, String] = sys_exec(p, compiler, stage, file_path);
+    if !compiler_stage_ok(stage) {
+        return Err("compiler_run_stage: residual stage: " + stage);
+    }
+    if chars_len(bin) == 0 {
+        return Err("compiler_run_stage: empty compiler path");
+    }
+    if !compiler_path_ok(bin) {
+        return Err("compiler_run_stage: compiler path refused");
+    }
+    let r: Result[String, String] = sys_exec(p, bin, stage, file_path);
     return r;
-}
-
-pub fn compiler_run_ast(p: &ProcessCap, bin: String, file_path: String) -> Result[String, String] {
-    return compiler_run_stage(p, bin, "tokens", file_path);
 }
 
 pub fn compiler_run_tokens(p: &ProcessCap, bin: String, file_path: String) -> Result[String, String] {
     return compiler_run_stage(p, bin, "tokens", file_path);
-}
-
-pub fn compiler_run_outline(p: &ProcessCap, bin: String, file_path: String) -> Result[String, String] {
-    return compiler_run_stage(p, bin, "outline", file_path);
 }

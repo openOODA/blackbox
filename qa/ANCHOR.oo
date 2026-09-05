@@ -1,6 +1,6 @@
 // # Blackbox QA Subsystem Front Door
 //
-// Logline: Re-exports hostile crash fixtures and double-run invariant proofs for the blackbox subsystem.
+// Logline: Re-exports crash fixtures and double-run proofs. cli_proof.oo is a standalone main.
 //
 // Setup: Fails closed on any parse failure, classification defect, or output drift.
 //

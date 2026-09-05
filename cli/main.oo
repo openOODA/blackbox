@@ -1,101 +1,26 @@
 // # Blackbox Command Line Interface
 //
-// Logline: Dispatches command-line subcommands for crash autopsies, AST diffs, and execution traces.
+// Logline: Entry point. Dispatches autopsy, diff, and trace and exits fail-closed.
 //
-// Setup: Bound by ProcessCap and FsReadCap. Entry point for ooda blackbox invocations.
+// Setup: Bound by ProcessCap, FsReadCap, FsWriteCap, and EnvCap.
 //
 // Beats:
-//   1. Parse CLI argument list into subcommand and options.
-//   2. Route autopsy subcommand to parse crash artifacts and display 1-turn diagnoses.
-//   3. Route diff subcommand to execute compiler stages and emit semantic AST diffs.
-//   4. Route trace subcommand to print execution ring-buffer telemetry summaries.
+//   1. Dispatch argv through cli_dispatch.
+//   2. Exit 0 on Ok(0).
+//   3. process_exit nonzero on Err or nonzero Ok.
 
-import "autopsy/report_formatter.oo";
-import "diff/ast_diff.oo";
-import "bridge/dir_watcher.oo";
-import "record/ring_buffer.oo";
-
-pub fn cli_help() -> String {
-    let mut out: String = "Usage: blackbox <subcmd> [args...]\n\n";
-    out = out + "Subcommands:\n";
-    out = out + "  autopsy [path]       Parse .blackbox/autopsy.json and output 1-turn diagnosis\n";
-    out = out + "  diff <file.oo>       Run compiler stages and display semantic AST differences\n";
-    out = out + "  trace                Inspect flight recorder ring buffer telemetry\n";
-    out = out + "  version              Display blackbox version\n";
-    out = out + "  help                 Display this usage guide\n";
-    return out;
-}
-
-pub fn cli_run_autopsy(fs: &FsReadCap, path: String) -> Result[Int, String] {
-    let target: String = if chars_len(path) > 0 { path } else { dir_watcher_autopsy_file() };
-    let rd: Result[String, String] = dir_watcher_read_autopsy(fs, target);
-    let json: String = match rd { Ok(s) => s, Err(e) => { println("ERR autopsy read failed: " + e); return Err("autopsy file unreadable: " + target); } };
-    let rep: Result[String, String] = autopsy_format_from_json(json);
-    let text: String = match rep { Ok(s) => s, Err(e) => { println("ERR autopsy parse failed: " + e); return Err("autopsy parsing failed"); } };
-    println(text);
-    return Ok(0);
-}
-
-pub fn cli_run_diff(p: &ProcessCap, file1: String, file2: String) -> Result[Int, String] {
-    if chars_len(file1) == 0 {
-        println("ERR missing file argument for diff");
-        return Err("missing file argument");
-    }
-    if chars_len(file2) > 0 {
-        let cmp: Result[String, String] = ast_diff_compare_files(p, "", file1, file2);
-        let text: String = match cmp { Ok(s) => s, Err(e) => { println("ERR AST diff failed: " + e); return Err("diff failed"); } };
-        println(text);
-        return Ok(0);
-    }
-    let insp: Result[String, String] = ast_diff_inspect_file(p, "", file1);
-    let text2: String = match insp { Ok(s) => s, Err(e) => { println("ERR AST inspection failed: " + e); return Err("inspection failed"); } };
-    println(text2);
-    return Ok(0);
-}
-
-pub fn cli_run_trace() -> Result[Int, String] {
-    let buf: RingBuffer = ring_buffer_new(64);
-    println(ring_buffer_summary(buf));
-    return Ok(0);
-}
-
-pub fn cli_dispatch(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, args: List[String]) -> Result[Int, String] {
-    let n: Int = list_len(args);
-    if n == 0 {
-        println(cli_help());
-        return Ok(0);
-    }
-
-    let subcmd: String = list_get(args, 0);
-
-    if subcmd == "autopsy" {
-        let pth: String = if n > 1 { list_get(args, 1) } else { "" };
-        return cli_run_autopsy(fs, pth);
-    }
-
-    if subcmd == "diff" {
-        let f1: String = if n > 1 { list_get(args, 1) } else { "" };
-        let f2: String = if n > 2 { list_get(args, 2) } else { "" };
-        return cli_run_diff(p, f1, f2);
-    }
-
-    if subcmd == "trace" {
-        return cli_run_trace();
-    }
-
-    if subcmd == "version" { println("openOODA blackbox v0.1.0"); return Ok(0); }
-    if subcmd == "--version" { println("openOODA blackbox v0.1.0"); return Ok(0); }
-    if subcmd == "-v" { println("openOODA blackbox v0.1.0"); return Ok(0); }
-
-    if subcmd == "help" { println(cli_help()); return Ok(0); }
-    if subcmd == "--help" { println(cli_help()); return Ok(0); }
-    if subcmd == "-h" { println(cli_help()); return Ok(0); }
-
-    println("Unknown subcommand: " + subcmd + "\n");
-    println(cli_help());
-    return Err("unknown subcommand: " + subcmd);
-}
+import "cli_run.oo";
 
 pub fn main(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap, args: List[String]) -> Result[Int, String] {
-    return cli_dispatch(p, fs, fw, args);
+    let r: Result[Int, String] = cli_dispatch(p, fs, fw, env, args);
+    match r {
+        Ok(c) => {
+            if c != 0 { process_exit(c); }
+            return Ok(0);
+        }
+        Err(e) => {
+            process_exit(1);
+            return Err(e);
+        }
+    }
 }

@@ -1,0 +1,13 @@
+// # Distinctive token sample for blackbox diff
+//
+// Logline: Tiny module whose tokens dump must contain blackbox_diff_sample.
+//
+// Setup: No caps. No main. Used as a tokens target.
+//
+// Beats:
+//   1. Export one function with a unique identifier.
+//   2. Return a constant so the body is non-empty.
+
+pub fn blackbox_diff_sample() -> Int {
+    return 7;
+}

@@ -75,11 +75,7 @@ pub fn crash_fixture_cap_trap_json() -> String {
 pub fn proof_verify_null_deref() -> Result[Int, String] {
     let json: String = crash_fixture_null_ptr_json();
     let res: Result[AutopsyData, String] = autopsy_parse(json);
-    if res.is_err() {
-        return Err("proof_verify_null_deref: parse failed: " + res.unwrap_err());
-    }
-
-    let data: AutopsyData = res.unwrap();
+    let data: AutopsyData = match res { Ok(d) => d, Err(e) => return Err("proof_verify_null_deref: parse failed: " + e); };
     if data.crash_signal != 11 {
         return Err("proof_verify_null_deref: expected signal 11");
     }
@@ -108,6 +104,9 @@ pub fn proof_verify_null_deref() -> Result[Int, String] {
     if str_index_of(report, "NULL_POINTER_DEREFERENCE") < 0 {
         return Err("proof_verify_null_deref: missing root cause in report");
     }
+    if str_index_of(report, "core/alloc/arena.oo:42:5:arena_alloc") < 0 {
+        return Err("proof_verify_null_deref: missing failure_coordinate in report");
+    }
 
     return Ok(0);
 }
@@ -115,11 +114,7 @@ pub fn proof_verify_null_deref() -> Result[Int, String] {
 pub fn proof_verify_cap_trap() -> Result[Int, String] {
     let json: String = crash_fixture_cap_trap_json();
     let res: Result[AutopsyData, String] = autopsy_parse(json);
-    if res.is_err() {
-        return Err("proof_verify_cap_trap: parse failed: " + res.unwrap_err());
-    }
-
-    let data: AutopsyData = res.unwrap();
+    let data: AutopsyData = match res { Ok(d) => d, Err(e) => return Err("proof_verify_cap_trap: parse failed: " + e); };
     let is_trapped: Bool = data.cap_trapped;
     if !is_trapped {
         return Err("proof_verify_cap_trap: expected cap_trapped to be true");

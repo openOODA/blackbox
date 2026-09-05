@@ -8,7 +8,7 @@
 //   1. Execute first run of autopsy JSON diagnostic report generation.
 //   2. Execute second run of autopsy JSON diagnostic report generation on identical input.
 //   3. Assert byte-identical equality across both output reports.
-//   4. Assert determinism across AST semantic diffing and telemetry serialization.
+//   4. Assert determinism across token dump diffing and telemetry serialization.
 
 import "autopsy/report_formatter.oo";
 import "diff/ast_diff.oo";
@@ -19,17 +19,10 @@ pub fn proof_double_run_autopsy() -> Result[Int, String] {
     let json: String = crash_fixture_null_ptr_json();
 
     let r1: Result[String, String] = report_formatter_from_json(json);
-    if r1.is_err() {
-        return Err("proof_double_run_autopsy: run 1 failed: " + r1.unwrap_err());
-    }
+    let rep1: String = match r1 { Ok(s) => s, Err(e) => return Err("proof_double_run_autopsy: run 1 failed: " + e); };
 
     let r2: Result[String, String] = report_formatter_from_json(json);
-    if r2.is_err() {
-        return Err("proof_double_run_autopsy: run 2 failed: " + r2.unwrap_err());
-    }
-
-    let rep1: String = r1.unwrap();
-    let rep2: String = r2.unwrap();
+    let rep2: String = match r2 { Ok(s) => s, Err(e) => return Err("proof_double_run_autopsy: run 2 failed: " + e); };
 
     if rep1 != rep2 {
         return Err("double-run invariant violation: autopsy output drifted between runs");

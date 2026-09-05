@@ -1,0 +1,103 @@
+// # Blackbox CLI function proofs
+//
+// Logline: Drive the same locate, autopsy, and trace functions the CLI uses.
+//
+// Setup: FsReadCap. Fixture is blackbox/qa/autopsy_null.json. No PATH hunt.
+//
+// Beats:
+//   1. Missing compiler env is ERR.
+//   2. Residual compiler stages that oodac does not dispatch are refused.
+//   3. On-disk autopsy includes root_cause and failure_coordinate; double-run identical.
+//   4. Missing and `..` autopsy paths fail closed. Empty trace is ERR.
+
+import "diff/compiler_runner.oo";
+import "bridge/dir_watcher.oo";
+import "cli/cli_run.oo";
+
+fn proof_compiler_missing(fs: &FsReadCap) -> Result[Int, String] {
+    let r: Result[String, String] = compiler_locate_from(fs, "", "");
+    if r.is_ok() {
+        return Err("proof_compiler_missing: empty env must fail");
+    }
+    let msg: String = match r { Ok(_) => "", Err(e) => e };
+    if str_index_of(msg, "OODA_COMPILER or OODAC_BIN required") < 0 {
+        return Err("proof_compiler_missing: wrong err");
+    }
+    let r2: Result[String, String] = compiler_locate_from(fs, "barebin", "");
+    if r2.is_ok() {
+        return Err("proof_compiler_missing: bare name must fail");
+    }
+    let r3: Result[String, String] = compiler_locate_from(fs, "../oodac", "");
+    if r3.is_ok() {
+        return Err("proof_compiler_missing: traversal must fail");
+    }
+    return Ok(0);
+}
+
+fn proof_residual_stage() -> Result[Int, String] {
+    let residual_a: String = "as" + "t";
+    let residual_o: String = "out" + "line";
+    if compiler_stage_ok(residual_a) { return Err("proof_residual_stage: residual ast must be refused"); }
+    if compiler_stage_ok(residual_o) { return Err("proof_residual_stage: residual dump stage must be refused"); }
+    if compiler_stage_ok("run") { return Err("proof_residual_stage: run must be refused"); }
+    if !compiler_stage_ok("tokens") { return Err("proof_residual_stage: tokens must be allowed"); }
+    return Ok(0);
+}
+
+fn proof_autopsy_file(fs: &FsReadCap) -> Result[Int, String] {
+    let path: String = "blackbox/qa/autopsy_null.json";
+    let r1: Result[String, String] = autopsy_read_report(fs, path);
+    if r1.is_err() { return Err("proof_autopsy_file: run 1 failed"); }
+    let t1: String = match r1 { Ok(s) => s, Err(_) => "" };
+    let r2: Result[String, String] = autopsy_read_report(fs, path);
+    if r2.is_err() { return Err("proof_autopsy_file: run 2 failed"); }
+    let t2: String = match r2 { Ok(s) => s, Err(_) => "" };
+    if t1 != t2 { return Err("proof_autopsy_file: double-run drifted"); }
+    if str_index_of(t1, "NULL_POINTER_DEREFERENCE") < 0 {
+        return Err("proof_autopsy_file: missing root_cause");
+    }
+    if str_index_of(t1, "core/alloc/arena.oo:42:5:arena_alloc") < 0 {
+        return Err("proof_autopsy_file: missing failure_coordinate");
+    }
+    return Ok(0);
+}
+
+fn proof_autopsy_fail_closed(fs: &FsReadCap) -> Result[Int, String] {
+    let miss: Result[String, String] = autopsy_read_report(fs, "blackbox/qa/no_such_autopsy.json");
+    if miss.is_ok() {
+        return Err("proof_autopsy_fail_closed: missing file must fail");
+    }
+    let trav: Result[String, String] = autopsy_read_report(fs, "../LICENSE");
+    if trav.is_ok() {
+        return Err("proof_autopsy_fail_closed: .. must fail");
+    }
+    return Ok(0);
+}
+
+fn proof_trace_empty(fs: &FsReadCap) -> Result[Int, String] {
+    let rd: Result[String, String] = dir_watcher_read_flight(fs, "");
+    if rd.is_ok() {
+        return Err("proof_trace_empty: empty ring must not succeed");
+    }
+    let msg: String = match rd { Ok(_) => "", Err(e) => e };
+    if str_index_of(msg, "no flight log exists") < 0 {
+        return Err("proof_trace_empty: wrong err");
+    }
+    return Ok(0);
+}
+
+pub fn main(fs: &FsReadCap, args: List[String]) -> Result[Int, String] {
+    let _n: Int = list_len(args);
+    let a: Result[Int, String] = proof_compiler_missing(fs);
+    if a.is_err() { println("ERR proof_compiler_missing"); return a; }
+    let b: Result[Int, String] = proof_residual_stage();
+    if b.is_err() { println("ERR proof_residual_stage"); return b; }
+    let c: Result[Int, String] = proof_autopsy_file(fs);
+    if c.is_err() { println("ERR proof_autopsy_file"); return c; }
+    let d: Result[Int, String] = proof_autopsy_fail_closed(fs);
+    if d.is_err() { println("ERR proof_autopsy_fail_closed"); return d; }
+    let t: Result[Int, String] = proof_trace_empty(fs);
+    if t.is_err() { println("ERR proof_trace_empty"); return t; }
+    println("OK blackbox cli_proof");
+    return Ok(0);
+}

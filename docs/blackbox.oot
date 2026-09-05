@@ -4,10 +4,10 @@ File: blackbox/docs/blackbox.oot
 ## 1. Description and Scope
 
 This document specifies the openOODA blackbox subsystem.
-The blackbox subsystem records process telemetry during execution.
-When an unhandled crash or capability trap occurs, the runtime writes `.blackbox/autopsy.json`.
-The autopsy engine parses this file and outputs a one-turn diagnostic report for AI agents.
-The diff engine runs compiler stages to show semantic differences between AST structures.
+The autopsy engine reads autopsy JSON and outputs a one-turn diagnostic report.
+This repository does not write `.blackbox/autopsy.json`; callers supply a fixture or a later runtime dump.
+The diff engine runs `oodac tokens` on source files.
+The trace command prints a written `.blackbox/flight.json` or fails closed.
 
 ## 2. Directory Architecture
 
@@ -44,8 +44,7 @@ Each event record contains five fields:
 
 ## 4. Crash Autopsy Protocol
 
-When an executable terminates abnormally, the runtime writes `.blackbox/autopsy.json`.
-The autopsy payload adheres to the following contract:
+Autopsy JSON adheres to the following contract:
 
 - `schema_version`: Version of the autopsy format (`1.0.0`).
 - `crash_signal`: POSIX signal code (11 for SIGSEGV, 6 for SIGABRT, 7 for SIGBUS, 4 for SIGILL).
@@ -66,7 +65,7 @@ The bridge subsystem provides bindings for openOODA MCP server integration:
 - `blackbox_autopsy`: Requires `FsReadCap` (bitmask 1).
   Reads `.blackbox/autopsy.json` and emits a compact one-turn diagnostic block.
 - `blackbox_diff`: Requires `FsReadCap` and `ProcessCap` (bitmask 5).
-  Runs `oodac ast` on target source files and displays semantic structural diffs.
+  Runs `oodac tokens` on target source files and displays token-dump diffs.
 
 ## 6. Subsystem Invariants
 

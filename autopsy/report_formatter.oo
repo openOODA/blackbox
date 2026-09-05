@@ -10,7 +10,6 @@
 //   3. Format call stack frames, CPU registers, and capability state.
 //   4. Emit 1-turn prescriptive agent action and footer.
 
-import "coordinate_locator.oo";
 import "root_cause.oo";
 import "autopsy_parser.oo";
 
@@ -42,13 +41,11 @@ pub fn autopsy_format_report(data: AutopsyData) -> String {
     let sig: Int = data.crash_signal;
     let s_sig: String = sig.to_string();
     let s_desc: String = root_cause_signal_desc(sig);
-    let coord: FailureCoordinate = coordinate_parse(data.failure_coordinate);
-    let s_coord: String = coordinate_format(coord);
 
     let mut out: String = "=== BLACKBOX CRASH AUTOPSY ===\n";
     out = out + "Signal: " + data.signal_name + " (" + s_sig + ") - " + s_desc + "\n";
     out = out + "Fault Address: " + data.fault_address + "\n";
-    out = out + "Failure Coordinate: " + s_coord + "\n";
+    out = out + "Failure Coordinate: " + data.failure_coordinate + "\n";
     out = out + "Root Cause: " + data.root_cause + "\n";
     out = out + "Description: " + data.description + "\n\n";
 

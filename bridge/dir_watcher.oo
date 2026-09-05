@@ -18,6 +18,10 @@ pub fn dir_watcher_autopsy_file() -> String {
     return ".blackbox/autopsy.json";
 }
 
+pub fn dir_watcher_flight_file() -> String {
+    return ".blackbox/flight.json";
+}
+
 pub fn dir_watcher_has_autopsy(fs: &FsReadCap, path: String) -> Bool {
     let mut target: String = dir_watcher_autopsy_file();
     if chars_len(path) > 0 {
@@ -40,4 +44,20 @@ pub fn dir_watcher_read_autopsy(fs: &FsReadCap, path: String) -> Result[String, 
     }
     let res: Result[String, String] = read_file(fs, target);
     return res;
+}
+
+pub fn dir_watcher_read_flight(fs: &FsReadCap, path: String) -> Result[String, String] {
+    let mut target: String = dir_watcher_flight_file();
+    if chars_len(path) > 0 {
+        target = path;
+    }
+    if str_index_of(target, "..") >= 0 {
+        return Err("dir_watcher: path traversal rejected");
+    }
+    let res: Result[String, String] = read_file(fs, target);
+    let text: String = match res { Ok(s) => s, Err(_) => return Err("no flight log exists"); };
+    if chars_len(text) == 0 {
+        return Err("no flight log exists");
+    }
+    return Ok(text);
 }

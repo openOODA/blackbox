@@ -1,14 +1,14 @@
-// # Semantic AST Diffing Engine
+// # Token Dump Diffing Engine
 //
-// Logline: Computes semantic structural AST differences across source revisions or compiler passes.
+// Logline: Diffs oodac tokens dumps across two files or inspects one file.
 //
-// Setup: Relies on compiler_runner under ProcessCap. Suppresses whitespace-only churn.
+// Setup: Relies on compiler_runner under ProcessCap. tokens stage only.
 //
 // Beats:
-//   1. Split AST and token outputs into structured line collections.
-//   2. Compare item signatures across AST versions.
-//   3. Format hierarchical diff blocks with added, removed, and retained nodes.
-//   4. Coordinate invocation of oodac ast on file targets.
+//   1. Split token dumps into line collections.
+//   2. Compare lines across two dumps.
+//   3. Format added and removed lines.
+//   4. Invoke compiler_run_tokens on file targets.
 
 import "compiler_runner.oo";
 
@@ -48,13 +48,13 @@ fn ast_diff_list_contains(lines: List[String], target: String) -> Bool {
 
 pub fn ast_diff_compare_texts(ast_before: String, ast_after: String) -> String {
     if ast_before == ast_after {
-        return "=== BLACKBOX SEMANTIC AST DIFF ===\nStatus: Identical (zero semantic AST drift detected)\n==================================";
+        return "=== BLACKBOX TOKEN DIFF ===\nStatus: Identical (zero token dump drift detected)\n==================================";
     }
 
     let b_lines: List[String] = ast_diff_split_lines(ast_before);
     let a_lines: List[String] = ast_diff_split_lines(ast_after);
 
-    let mut out: String = "=== BLACKBOX SEMANTIC AST DIFF ===\n";
+    let mut out: String = "=== BLACKBOX TOKEN DIFF ===\n";
     let mut changes: Int = 0;
 
     let n_b: Int = list_len(b_lines);
@@ -84,23 +84,23 @@ pub fn ast_diff_compare_texts(ast_before: String, ast_after: String) -> String {
     }
 
     let s_ch: String = changes.to_string();
-    out = out + "Summary: " + s_ch + " semantic changes\n";
+    out = out + "Summary: " + s_ch + " token dump changes\n";
     out = out + "==================================";
     return out;
 }
 
 pub fn ast_diff_compare_files(p: &ProcessCap, bin: String, file_b: String, file_a: String) -> Result[String, String] {
-    let rb: Result[String, String] = compiler_run_ast(p, bin, file_b);
+    let rb: Result[String, String] = compiler_run_tokens(p, bin, file_b);
     let btxt: String = match rb { Ok(s) => s, Err(e) => return Err(e); };
-    let ra: Result[String, String] = compiler_run_ast(p, bin, file_a);
+    let ra: Result[String, String] = compiler_run_tokens(p, bin, file_a);
     let atxt: String = match ra { Ok(s) => s, Err(e) => return Err(e); };
     return Ok(ast_diff_compare_texts(btxt, atxt));
 }
 
 pub fn ast_diff_inspect_file(p: &ProcessCap, bin: String, file: String) -> Result[String, String] {
-    let r: Result[String, String] = compiler_run_ast(p, bin, file);
+    let r: Result[String, String] = compiler_run_tokens(p, bin, file);
     let raw: String = match r { Ok(s) => s, Err(e) => return Err(e); };
-    let mut out: String = "=== BLACKBOX AST INSPECTION ===\n";
+    let mut out: String = "=== BLACKBOX TOKEN INSPECTION ===\n";
     out = out + "File: " + file + "\n\n";
     out = out + raw + "\n";
     out = out + "===============================";

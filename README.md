@@ -35,22 +35,22 @@ blackbox/
 
 ## Purpose
 
-The `blackbox` subsystem provides execution flight recording and crash autopsy.
-When an executable crashes, the runtime substrate writes `.blackbox/autopsy.json`.
-The autopsy engine parses this record and produces a compact 1-turn root-cause diagnosis.
-The diff engine runs compiler stages to show semantic AST differences.
+The `blackbox` CLI reads crash autopsy JSON and dumps live `oodac tokens` output.
+This repo does not write `.blackbox/autopsy.json` or a flight log; autopsy is fixture-driven.
+`diff` locates the compiler from `OODA_COMPILER` or `OODAC_BIN` (no PATH hunt) and runs `tokens`.
+`trace` prints `.blackbox/flight.json` when that file exists and is non-empty; otherwise it prints `ERR`.
 
 ## CLI Usage
 
 ```sh
-# Parse crash autopsy and output 1-turn agent diagnosis
-ooda blackbox autopsy [.blackbox/autopsy.json]
+# Parse autopsy JSON and output 1-turn agent diagnosis
+blackbox autopsy path/to/autopsy.json
 
-# Run compiler stages and display semantic AST diffs
-ooda blackbox diff path/to/file.oo
+# Run oodac tokens on a file (requires OODA_COMPILER or OODAC_BIN)
+blackbox diff path/to/file.oo
 
-# Inspect ring buffer flight telemetry trace
-ooda blackbox trace
+# Print a written flight log, or ERR if none exists
+blackbox trace
 ```
 
 ## Governance and Constraints

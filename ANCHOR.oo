@@ -1,6 +1,6 @@
 // # Blackbox Subsystem — Anchor for Agents
 //
-// Logline: Front door for the blackbox/ directory. Flight recorder, crash autopsy engine, and AST diff toolchain.
+// Logline: Front door for the blackbox/ directory. Autopsy reader, tokens diff, and fail-closed trace.
 //
 // Setup: Eight subsystem directories. Version is 0.1.0 in VERSION and blackbox_version().
 //

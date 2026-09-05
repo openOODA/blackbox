@@ -1,12 +1,12 @@
 // # Blackbox Diff Subsystem Front Door
 //
-// Logline: Re-exports compiler stage runner and semantic AST diffing engine.
+// Logline: Re-exports compiler locate, tokens runner, and token-dump diffing.
 //
-// Setup: Bridges oodac stages under ProcessCap to compute semantic changes across AST representations.
+// Setup: Bridges oodac tokens under ProcessCap. Compiler path from env, not PATH.
 //
 // Beats:
-//   1. Re-export compiler stage execution routines.
-//   2. Re-export AST comparison and semantic diff formatting.
+//   1. Re-export compiler locate and tokens execution.
+//   2. Re-export token dump comparison and inspection formatting.
 //   3. Provide single front-door module for compiler introspection.
 
 import "compiler_runner.oo";

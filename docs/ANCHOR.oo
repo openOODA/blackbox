@@ -2,7 +2,7 @@
 //
 // Logline: Re-exports subsystem documentation references and specification contracts.
 //
-// Setup: Outlines specification chapters in docs/blackbox.oot.
+// Setup: Lists specification chapters in docs/blackbox.oot.
 //
 // Beats:
 //   1. Register blackbox.oot specification file.
