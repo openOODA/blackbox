@@ -5,7 +5,7 @@
 // Setup: Eight subsystem directories. Version is 0.1.0 in VERSION and blackbox_version().
 //
 // Beats:
-//   1. record/ provides telemetry schemas, flight event records, and ring buffers.
+//   1. record/ provides telemetry schemas and flight event records.
 //   2. autopsy/ provides crash parsing, coordinate location, and root-cause classification.
 //   3. diff/ provides compiler stage invocation and semantic AST diffing.
 //   4. bridge/ provides ProcessCap process runners, directory watchers, and MCP bindings.

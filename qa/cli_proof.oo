@@ -34,13 +34,20 @@ fn proof_compiler_missing(fs: &FsReadCap) -> Result[Int, String] {
     return Ok(0);
 }
 
-fn proof_residual_stage() -> Result[Int, String] {
+fn proof_residual_stage(p: &ProcessCap) -> Result[Int, String] {
     let residual_a: String = "as" + "t";
     let residual_o: String = "out" + "line";
     if compiler_stage_ok(residual_a) { return Err("proof_residual_stage: residual ast must be refused"); }
     if compiler_stage_ok(residual_o) { return Err("proof_residual_stage: residual dump stage must be refused"); }
     if compiler_stage_ok("run") { return Err("proof_residual_stage: run must be refused"); }
     if !compiler_stage_ok("tokens") { return Err("proof_residual_stage: tokens must be allowed"); }
+    if !compiler_stage_ok("check") { return Err("proof_residual_stage: check must be allowed"); }
+    if !compiler_stage_ok("emit-c") { return Err("proof_residual_stage: emit-c must be allowed"); }
+    if !compiler_stage_ok("build") { return Err("proof_residual_stage: build must be allowed"); }
+    let r_ast: Result[String, String] = compiler_run_stage(p, "", residual_a, "blackbox/qa/diff_sample.oo");
+    if r_ast.is_ok() { return Err("proof_residual_stage: run ast must fail"); }
+    let r_empty: Result[String, String] = compiler_run_stage(p, "", "check", "blackbox/qa/diff_sample.oo");
+    if r_empty.is_ok() { return Err("proof_residual_stage: empty bin must fail"); }
     return Ok(0);
 }
 
@@ -86,11 +93,11 @@ fn proof_trace_empty(fs: &FsReadCap) -> Result[Int, String] {
     return Ok(0);
 }
 
-pub fn main(fs: &FsReadCap, args: List[String]) -> Result[Int, String] {
+pub fn main(p: &ProcessCap, fs: &FsReadCap, args: List[String]) -> Result[Int, String] {
     let _n: Int = list_len(args);
     let a: Result[Int, String] = proof_compiler_missing(fs);
     if a.is_err() { println("ERR proof_compiler_missing"); return a; }
-    let b: Result[Int, String] = proof_residual_stage();
+    let b: Result[Int, String] = proof_residual_stage(p);
     if b.is_err() { println("ERR proof_residual_stage"); return b; }
     let c: Result[Int, String] = proof_autopsy_file(fs);
     if c.is_err() { println("ERR proof_autopsy_file"); return c; }

@@ -38,6 +38,7 @@ blackbox/
 The `blackbox` CLI reads crash autopsy JSON and dumps live `oodac tokens` output.
 This repo does not write `.blackbox/autopsy.json` or a flight log; autopsy is fixture-driven.
 `diff` locates the compiler from `OODA_COMPILER` or `OODAC_BIN` (no PATH hunt) and runs `tokens`.
+`inspect` runs live `tokens`, `check`, `emit-c`, or `build` and prints the child text, including gcc diagnostics.
 `trace` prints `.blackbox/flight.json` when that file exists and is non-empty; otherwise it prints `ERR`.
 
 ## CLI Usage
@@ -48,6 +49,11 @@ blackbox autopsy path/to/autopsy.json
 
 # Run oodac tokens on a file (requires OODA_COMPILER or OODAC_BIN)
 blackbox diff path/to/file.oo
+
+# Run a live oodac stage (tokens, check, emit-c, or build)
+blackbox inspect check path/to/file.oo
+blackbox inspect emit-c path/to/file.oo
+blackbox inspect build path/to/file.oo
 
 # Print a written flight log, or ERR if none exists
 blackbox trace

@@ -10,4 +10,5 @@
 //   3. Provide unified interface for CLI invocations.
 
 import "cli_run.oo";
+import "cli_inspect.oo";
 import "main.oo";

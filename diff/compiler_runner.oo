@@ -1,14 +1,14 @@
 // # Compiler Stage Runner
 //
-// Logline: Locates oodac from env and runs the tokens stage under ProcessCap.
+// Logline: Locates oodac from env and runs live tokens, check, emit-c, or build.
 //
-// Setup: OODA_COMPILER or OODAC_BIN only. No PATH hunt. tokens is the only stage.
+// Setup: OODA_COMPILER or OODAC_BIN only. No PATH hunt. Residual stages fail closed.
 //
 // Beats:
 //   1. Refuse empty, `..`, bare names, and shell metacharacters.
 //   2. Require the compiler path to exist under FsReadCap.
-//   3. Invoke tokens only. Residual stages fail closed.
-//   4. Capture stdout from sys_exec.
+//   3. Allow tokens, check, emit-c, and build. Residual names fail closed.
+//   4. Capture child stdout from sys_exec.
 
 pub fn compiler_path_ok(p: String) -> Bool {
     if chars_len(p) == 0 { return false; }
@@ -52,7 +52,11 @@ pub fn compiler_locate(fs: &FsReadCap, env: &EnvCap) -> Result[String, String] {
 }
 
 pub fn compiler_stage_ok(stage: String) -> Bool {
-    return stage == "tokens";
+    if stage == "tokens" { return true; }
+    if stage == "check" { return true; }
+    if stage == "emit-c" { return true; }
+    if stage == "build" { return true; }
+    return false;
 }
 
 pub fn compiler_run_stage(p: &ProcessCap, bin: String, stage: String, file_path: String) -> Result[String, String] {
@@ -60,7 +64,7 @@ pub fn compiler_run_stage(p: &ProcessCap, bin: String, stage: String, file_path:
         return Err("compiler_run_stage: empty file path");
     }
     if !compiler_stage_ok(stage) {
-        return Err("compiler_run_stage: residual stage: " + stage);
+        return Err("residual stage: " + stage);
     }
     if chars_len(bin) == 0 {
         return Err("compiler_run_stage: empty compiler path");
@@ -70,6 +74,24 @@ pub fn compiler_run_stage(p: &ProcessCap, bin: String, stage: String, file_path:
     }
     let r: Result[String, String] = sys_exec(p, bin, stage, file_path);
     return r;
+}
+
+pub fn compiler_run_build(p: &ProcessCap, bin: String, file_path: String, out_arg: String) -> Result[String, String] {
+    if chars_len(file_path) == 0 {
+        return Err("compiler_run_build: empty file path");
+    }
+    if chars_len(bin) == 0 {
+        return Err("compiler_run_build: empty compiler path");
+    }
+    if !compiler_path_ok(bin) {
+        return Err("compiler_run_build: compiler path refused");
+    }
+    if chars_len(out_arg) > 0 {
+        let r: Result[String, String] = sys_exec(p, bin, "build", file_path, "-o", out_arg);
+        return r;
+    }
+    let r2: Result[String, String] = sys_exec(p, bin, "build", file_path);
+    return r2;
 }
 
 pub fn compiler_run_tokens(p: &ProcessCap, bin: String, file_path: String) -> Result[String, String] {

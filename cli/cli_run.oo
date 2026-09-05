@@ -14,15 +14,18 @@ import "autopsy/report_formatter.oo";
 import "diff/ast_diff.oo";
 import "diff/compiler_runner.oo";
 import "bridge/dir_watcher.oo";
+import "cli_inspect.oo";
 
 pub fn cli_help() -> String {
-    let mut out: String = "Usage: blackbox autopsy|diff|trace [args...]\n\n";
+    let mut out: String = "Usage: blackbox autopsy|diff|inspect|trace [args...]\n\n";
     out = out + "Subcommands:\n";
-    out = out + "  autopsy [path]       Parse autopsy JSON and print a 1-turn diagnosis\n";
-    out = out + "  diff <file.oo>       Run oodac tokens (OODA_COMPILER or OODAC_BIN)\n";
-    out = out + "  trace                Print a written flight log if one exists\n";
-    out = out + "  version              Display blackbox version\n";
-    out = out + "  help                 Display this usage guide\n";
+    out = out + "  autopsy [path]                 Parse autopsy JSON and print a 1-turn diagnosis\n";
+    out = out + "  diff <file.oo>                 Run oodac tokens (OODA_COMPILER or OODAC_BIN)\n";
+    out = out + "  inspect tokens|check|emit-c|build <file.oo>\n";
+    out = out + "                                 Run a live oodac stage and print child text\n";
+    out = out + "  trace                          Print a written flight log if one exists\n";
+    out = out + "  version                        Display blackbox version\n";
+    out = out + "  help                           Display this usage guide\n";
     return out;
 }
 
@@ -111,6 +114,12 @@ pub fn cli_dispatch(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCa
         let f1: String = if n > 1 { list_get(args, 1) } else { "" };
         let f2: String = if n > 2 { list_get(args, 2) } else { "" };
         return cli_run_diff(p, fs, env, f1, f2);
+    }
+    if subcmd == "inspect" {
+        let st: String = if n > 1 { list_get(args, 1) } else { "" };
+        let fp: String = if n > 2 { list_get(args, 2) } else { "" };
+        let oa: String = if n > 3 { list_get(args, 3) } else { "" };
+        return cli_run_inspect(p, fs, env, st, fp, oa);
     }
     if subcmd == "trace" {
         return cli_run_trace(fs);

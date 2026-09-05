@@ -1,0 +1,50 @@
+// # Blackbox live compiler inspect
+//
+// Logline: Runs oodac tokens, check, emit-c, or build and prints the child text.
+//
+// Setup: ProcessCap, FsReadCap, EnvCap. Compiler from OODA_COMPILER or OODAC_BIN.
+//
+// Beats:
+//   1. Refuse residual stage names.
+//   2. Locate the compiler fail-closed.
+//   3. Exec the live stage and print captured child text.
+//   4. Nonzero when the child failed so gcc diagnostics stay on stdout.
+
+import "diff/compiler_runner.oo";
+
+fn inspect_err(msg: String) -> Result[Int, String] {
+    let line: String = "ERR " + msg;
+    println(line);
+    return Err(msg);
+}
+
+pub fn cli_run_inspect(p: &ProcessCap, fs: &FsReadCap, env: &EnvCap, stage: String, file_path: String, out_arg: String) -> Result[Int, String] {
+    if chars_len(stage) == 0 {
+        return inspect_err("missing inspect stage");
+    }
+    if !compiler_stage_ok(stage) {
+        return inspect_err("residual stage: " + stage);
+    }
+    if chars_len(file_path) == 0 {
+        return inspect_err("missing file argument");
+    }
+    let loc: Result[String, String] = compiler_locate(fs, env);
+    if loc.is_err() {
+        let e: String = match loc { Ok(_) => "", Err(m) => m };
+        return inspect_err(e);
+    }
+    let bin: String = match loc { Ok(s) => s, Err(_) => "" };
+    let r: Result[String, String] = if stage == "build" {
+        compiler_run_build(p, bin, file_path, out_arg)
+    } else {
+        compiler_run_stage(p, bin, stage, file_path)
+    };
+    if r.is_ok() {
+        let text: String = match r { Ok(s) => s, Err(_) => "" };
+        println(text);
+        return Ok(0);
+    }
+    let errt: String = match r { Ok(_) => "", Err(m) => m };
+    println(errt);
+    return inspect_err("inspect failed");
+}

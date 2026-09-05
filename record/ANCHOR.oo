@@ -1,14 +1,13 @@
 // # Blackbox Record Subsystem Front Door
 //
-// Logline: Re-exports telemetry schema definitions, flight event records, and circular buffers.
+// Logline: Re-exports telemetry schema definitions and flight event records.
 //
-// Setup: Pure memory structures. Governs execution recording contracts.
+// Setup: Pure memory structures. Flight log on disk is `.blackbox/flight.json`.
 //
 // Beats:
 //   1. Re-export telemetry schema event types and phase mappings.
 //   2. Re-export event record structures and serialization.
-//   3. Re-export circular ring buffer management.
+//   3. No in-process ring. Trace reads a written file or fails closed.
 
 import "telemetry_schema.oo";
 import "event_record.oo";
-import "ring_buffer.oo";
