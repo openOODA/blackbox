@@ -1,0 +1,76 @@
+// # Blackbox Surface Verifier Core
+//
+// Logline: Predicates verifying repository invariants, MCP tool schemas, and telemetry codes.
+//
+// Setup: Pure predicate verifier. Enforces ASD-STE100 headers and line count ceiling.
+//
+// Beats:
+//   1. Verify line count and Academy header predicates.
+//   2. Verify MCP tool catalog count and capability bitmasks.
+//   3. Verify execution flight telemetry schema codes.
+//   4. Return Ok(0) on success or Err on defect.
+
+import "bridge/mcp_bridge.oo";
+import "record/telemetry_schema.oo";
+
+pub fn verify_count_lines(text: String) -> Int {
+    let n: Int = chars_len(text);
+    if n == 0 { return 0; }
+    let mut count: Int = 1;
+    let mut i: Int = 0;
+    while i < n {
+        if char_at(text, i) == "\n" {
+            count = count + 1;
+        }
+        i = i + 1;
+    }
+    return count;
+}
+
+pub fn verify_has_academy_header(text: String) -> Bool {
+    if !str_starts_with(text, "// # ") { return false; }
+    if str_index_of(text, "// Logline:") < 0 { return false; }
+    if str_index_of(text, "// Setup:") < 0 { return false; }
+    if str_index_of(text, "// Beats:") < 0 { return false; }
+    return true;
+}
+
+pub fn verify_surface() -> Result[Int, String] {
+    if blackbox_mcp_tool_count() != 2 {
+        return Err("mcp tool count drifted from 2");
+    }
+
+    if blackbox_mcp_tool_caps("blackbox_autopsy") != 1 {
+        return Err("blackbox_autopsy must require FsReadCap (mask 1)");
+    }
+
+    if blackbox_mcp_tool_caps("blackbox_diff") != 5 {
+        return Err("blackbox_diff must require FsReadCap | ProcessCap (mask 5)");
+    }
+
+    if event_type_phase_change() != 1 {
+        return Err("telemetry schema PHASE_CHANGE must be 1");
+    }
+
+    if event_type_cap_require() != 2 {
+        return Err("telemetry schema CAP_REQUIRE must be 2");
+    }
+
+    if event_type_ast_node() != 3 {
+        return Err("telemetry schema AST_NODE must be 3");
+    }
+
+    if event_type_arena_mark() != 4 {
+        return Err("telemetry schema ARENA_MARK must be 4");
+    }
+
+    if event_type_io_dispatch() != 5 {
+        return Err("telemetry schema IO_DISPATCH must be 5");
+    }
+
+    if event_type_trap_signal() != 6 {
+        return Err("telemetry schema TRAP_SIGNAL must be 6");
+    }
+
+    return Ok(0);
+}

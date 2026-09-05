@@ -10,7 +10,7 @@
 //   3. Run double-run determinism invariant proofs.
 //   4. Print success status and return 0.
 
-import "verify.oo";
+import "verify_surface.oo";
 import "qa/crash_fixture_proof.oo";
 import "qa/double_run_proof.oo";
 

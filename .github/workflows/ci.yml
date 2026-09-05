@@ -1,0 +1,108 @@
+name: blackbox CI
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      target_tag:
+        description: 'Specific release tag to target or rebuild (optional, e.g. v0.1.0)'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout blackbox
+        uses: actions/checkout@v4
+        with:
+          path: blackbox
+      - name: checkout std
+        uses: actions/checkout@v4
+        with:
+          repository: openOODA/std
+          path: std
+      - name: checkout oodac
+        uses: actions/checkout@v4
+        with:
+          repository: openOODA/oodac
+          path: oodac
+      - name: checkout oodar
+        uses: actions/checkout@v4
+        with:
+          repository: openOODA/oodar
+          path: oodar
+      - name: require compiler
+        run: |
+          test -x oodac/bin/oodac || chmod +x oodac/bin/oodac
+          test -f oodac/runtime/chs_rt.c || { echo "missing oodac/runtime/chs_rt.c"; exit 1; }
+          test -f oodar/core/blackbox/blackbox.c || { echo "missing oodar/core/blackbox/blackbox.c"; exit 1; }
+      - name: run proofs and verifications
+        working-directory: ${{ github.workspace }}
+        env:
+          OODA_COMPILER: ${{ github.workspace }}/oodac/bin/oodac
+          OODA_FS_READDIR: ${{ github.workspace }}
+          OODA_FS_WRITEDIR: ${{ github.workspace }}
+        run: |
+          "${OODA_COMPILER}" build blackbox/scripts/verify.oo -o /tmp/bb_verify
+          /tmp/bb_verify
+          "${OODA_COMPILER}" build blackbox/scripts/test.oo -o /tmp/bb_test
+          /tmp/bb_test
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout blackbox
+        uses: actions/checkout@v4
+        with:
+          path: blackbox
+      - name: checkout std
+        uses: actions/checkout@v4
+        with:
+          repository: openOODA/std
+          path: std
+      - name: checkout oodac
+        uses: actions/checkout@v4
+        with:
+          repository: openOODA/oodac
+          path: oodac
+      - name: checkout oodar
+        uses: actions/checkout@v4
+        with:
+          repository: openOODA/oodar
+          path: oodar
+      - name: require compiler
+        run: |
+          test -x oodac/bin/oodac || chmod +x oodac/bin/oodac
+          test -f oodac/runtime/chs_rt.c || { echo "missing oodac/runtime/chs_rt.c"; exit 1; }
+          test -f oodar/core/blackbox/blackbox.c || { echo "missing oodar/core/blackbox/blackbox.c"; exit 1; }
+      - name: build native binary
+        working-directory: ${{ github.workspace }}
+        env:
+          OODA_COMPILER: ${{ github.workspace }}/oodac/bin/oodac
+          OODA_FS_READDIR: ${{ github.workspace }}
+          OODA_FS_WRITEDIR: ${{ github.workspace }}
+        run: |
+          mkdir -p dist
+          "${OODA_COMPILER}" build blackbox/cli/main.oo -o dist/blackbox-linux-x86_64
+          chmod +x dist/blackbox-linux-x86_64
+          (cd dist && sha256sum blackbox-linux-x86_64 > blackbox-linux-x86_64.sha256)
+          ls -lh dist/
+      - name: upload release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets-linux-x86_64
+          path: dist/
+          if-no-files-found: error
+
+  auto-release:
+    needs: [test, build]
+    uses: openOODA/openOODA/.github/workflows/auto-release.yml@main
+    with:
+      artifact_pattern: 'release-assets-*'
+      target_tag: ${{ inputs.target_tag || '' }}
