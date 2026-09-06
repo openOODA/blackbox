@@ -66,6 +66,27 @@ pub fn ring_buffer_push(rb: RingBuffer, ev: EventRecord) -> RingBuffer {
     };
 }
 
+pub fn ring_buffer_push_mut(rb: &mut RingBuffer, ev: EventRecord) {
+    let cap: Int = if rb.capacity <= 0 { 128 } else { rb.capacity };
+    let cur_len: Int = list_len(rb.events);
+    if cur_len < cap {
+        rb.events = list_push(rb.events, ev);
+    } else {
+        rb.events = list_set(rb.events, rb.head, ev);
+    }
+    rb.head = (rb.head + 1) % cap;
+    rb.count = rb.count + 1;
+}
+
+pub fn ring_buffer_push_batch_mut(rb: &mut RingBuffer, evs: List[EventRecord]) {
+    let n: Int = list_len(evs);
+    let mut i: Int = 0;
+    while i < n {
+        ring_buffer_push_mut(rb, list_get(evs, i));
+        i = i + 1;
+    }
+}
+
 pub fn ring_buffer_get_ordered(rb: RingBuffer, idx: Int) -> EventRecord {
     let len: Int = ring_buffer_len(rb);
     if idx < 0 || idx >= len {
@@ -139,6 +160,14 @@ pub fn dual_ring_buffer_record(drb: DualRingBuffer, ev: EventRecord) -> DualRing
         secondary: s,
         active_id: drb.active_id
     };
+}
+
+pub fn dual_ring_buffer_record_mut(drb: &mut DualRingBuffer, ev: EventRecord) {
+    if drb.active_id == 0 {
+        ring_buffer_push_mut(&mut drb.primary, ev);
+    } else {
+        ring_buffer_push_mut(&mut drb.secondary, ev);
+    }
 }
 
 pub fn dual_ring_buffer_swap(drb: DualRingBuffer) -> DualRingBuffer {

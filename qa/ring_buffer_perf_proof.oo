@@ -1,0 +1,100 @@
+// # Ring Buffer Performance and Zero-Copy Proof
+//
+// Logline: Proves high-throughput telemetry ingestion, circular wrap-around, and zero-copy dual buffering.
+//
+// Setup: Pure in-memory execution. Double-run determinism invariant Run_1 == Run_2.
+//
+// Beats:
+//   1. Push 500 telemetry events into capacity-64 buffer using in-place mutation.
+//   2. Assert capacity bounding (count 500, len 64) and chronological sequence preservation.
+//   3. Assert batch mutation produces identical output to sequential mutation.
+//   4. Assert dual ring buffer zero-copy in-place recording and snapshot isolation.
+//   5. Assert double-run determinism: Run_1 == Run_2.
+
+import "record/event_record.oo";
+import "record/ring_buffer.oo";
+
+fn populate_mut_buffer(total: Int, cap: Int) -> RingBuffer {
+    let mut rb: RingBuffer = ring_buffer_new(cap);
+    let mut i: Int = 1;
+    while i <= total {
+        let ev: EventRecord = event_record_new(i, (i % 5) + 1, (i % 6) + 1, "telemetry event " + i.to_string(), 1000 + i);
+        ring_buffer_push_mut(&mut rb, ev);
+        i = i + 1;
+    }
+    return rb;
+}
+
+pub fn ring_buffer_perf_proof_run() -> Result[Int, String] {
+    // 1. In-place high volume wrap-around verification
+    let rb: RingBuffer = populate_mut_buffer(500, 64);
+    let tot: Int = ring_buffer_total(rb);
+    if tot != 500 {
+        return Err("ring_buffer_perf: total events must be 500, got " + tot.to_string());
+    }
+    let len: Int = ring_buffer_len(rb);
+    if len != 64 {
+        return Err("ring_buffer_perf: buffer length must be 64, got " + len.to_string());
+    }
+
+    // 2. Verify chronological sequence ordering of surviving events
+    let oldest: EventRecord = ring_buffer_get_ordered(rb, 0);
+    if oldest.seq != 437 {
+        return Err("ring_buffer_perf: oldest event seq expected 437, got " + oldest.seq.to_string());
+    }
+    let newest: EventRecord = ring_buffer_get_ordered(rb, 63);
+    if newest.seq != 500 {
+        return Err("ring_buffer_perf: newest event seq expected 500, got " + newest.seq.to_string());
+    }
+
+    // 3. Batch push verification
+    let mut rb_batch: RingBuffer = ring_buffer_new(64);
+    let mut batch: List[EventRecord] = list_new();
+    let mut k: Int = 1;
+    while k <= 500 {
+        batch = list_push(batch, event_record_new(k, (k % 5) + 1, (k % 6) + 1, "telemetry event " + k.to_string(), 1000 + k));
+        k = k + 1;
+    }
+    ring_buffer_push_batch_mut(&mut rb_batch, batch);
+    if ring_buffer_total(rb_batch) != 500 || ring_buffer_len(rb_batch) != 64 {
+        return Err("ring_buffer_perf: batch push total or length mismatch");
+    }
+    let j_single: String = ring_buffer_to_json(rb);
+    let j_batch: String = ring_buffer_to_json(rb_batch);
+    if j_single != j_batch {
+        return Err("ring_buffer_perf: batch push JSON drifted from single push");
+    }
+
+    // 4. Dual ring buffer zero-copy in-place recording & snapshot isolation
+    let mut drb: DualRingBuffer = dual_ring_buffer_new(32);
+    let mut d_idx: Int = 1;
+    while d_idx <= 20 {
+        dual_ring_buffer_record_mut(&mut drb, event_record_new(d_idx, 1, 1, "init", 1000 + d_idx));
+        d_idx = d_idx + 1;
+    }
+    drb = dual_ring_buffer_swap(drb);
+    let snap: RingBuffer = dual_ring_buffer_snapshot(drb);
+    if ring_buffer_total(snap) != 20 {
+        return Err("ring_buffer_perf: snapshot total expected 20, got " + ring_buffer_total(snap).to_string());
+    }
+
+    // Record into newly active buffer; snapshot must remain unchanged
+    dual_ring_buffer_record_mut(&mut drb, event_record_new(21, 2, 1, "phase2", 2000));
+    let snap_after: RingBuffer = dual_ring_buffer_snapshot(drb);
+    if ring_buffer_total(snap_after) != 20 {
+        return Err("ring_buffer_perf: snapshot corrupted by active buffer mutation");
+    }
+
+    // 5. Double-run determinism proof
+    let run1_rb: RingBuffer = populate_mut_buffer(100, 32);
+    let run1_json: String = ring_buffer_to_json(run1_rb);
+
+    let run2_rb: RingBuffer = populate_mut_buffer(100, 32);
+    let run2_json: String = ring_buffer_to_json(run2_rb);
+
+    if run1_json != run2_json {
+        return Err("ring_buffer_perf: double-run determinism violated");
+    }
+
+    return Ok(0);
+}

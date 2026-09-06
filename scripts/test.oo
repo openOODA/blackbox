@@ -25,6 +25,7 @@ import "qa/crypto_capsule_proof.oo";
 import "qa/watch_proof.oo";
 import "qa/compact_proof.oo";
 import "qa/em_proof.oo";
+import "qa/ring_buffer_perf_proof.oo";
 import "qa/e2e_blue_ocean_proof.oo";
 
 pub fn test_run_all(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap) -> Result[Int, String] {
@@ -89,6 +90,12 @@ pub fn test_run_all(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCa
     if r_em.is_err() {
         let e_em: String = match r_em { Ok(_) => "", Err(msg) => msg };
         return Err("test: em proof failed: " + e_em);
+    }
+
+    let r_perf: Result[Int, String] = ring_buffer_perf_proof_run();
+    if r_perf.is_err() {
+        let e_perf: String = match r_perf { Ok(_) => "", Err(msg) => msg };
+        return Err("test: ring buffer perf proof failed: " + e_perf);
     }
 
     let r_e2e: Result[Int, String] = e2e_blue_ocean_proof_run(p, fs, fw, env);
