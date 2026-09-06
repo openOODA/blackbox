@@ -1,17 +1,21 @@
 // # Blackbox Surface Verifier Core
 //
-// Logline: Predicates verifying repository invariants, MCP tool schemas, and telemetry codes.
+// Logline: Predicates verifying repository invariants, MCP schemas, telemetry, and Blue Ocean CLI subcommands.
 //
-// Setup: Pure predicate verifier. Enforces ASD-STE100 headers and line count ceiling.
+// Setup: Pure predicate verifier. Enforces fail-closed contracts, Academy headers, and line ceiling.
 //
 // Beats:
 //   1. Verify line count and Academy header predicates.
 //   2. Verify MCP tool catalog count and capability bitmasks.
 //   3. Verify execution flight telemetry schema codes.
-//   4. Return Ok(0) on success or Err on defect.
+//   4. Verify CLI usage documentation and Blue Ocean subcommands (heal, pack, replay, watch).
+//   5. Verify fail-closed parameter validation and path traversal defenses across CLI subcommands.
 
 import "bridge/mcp_bridge.oo";
 import "record/telemetry_schema.oo";
+import "cli/cli_run.oo";
+import "cli/cli_capsule.oo";
+import "cli/cli_watch.oo";
 
 pub fn verify_count_lines(text: String) -> Int {
     let n: Int = chars_len(text);
@@ -33,6 +37,154 @@ pub fn verify_has_academy_header(text: String) -> Bool {
     if str_index_of(text, "// Setup:") < 0 { return false; }
     if str_index_of(text, "// Beats:") < 0 { return false; }
     return true;
+}
+
+pub fn verify_surface_cli_help() -> Result[Int, String] {
+    let h: String = cli_help();
+    if str_index_of(h, "heal [path]") < 0 {
+        return Err("cli help missing heal subcommand");
+    }
+    if str_index_of(h, "pack [file.bb]") < 0 {
+        return Err("cli help missing pack subcommand");
+    }
+    if str_index_of(h, "replay <file.bb>") < 0 {
+        return Err("cli help missing replay subcommand");
+    }
+    if str_index_of(h, "watch [dir]") < 0 {
+        return Err("cli help missing watch subcommand");
+    }
+    if str_index_of(h, "--once") < 0 {
+        return Err("cli help missing --once flag");
+    }
+    if str_index_of(h, "--max-ticks") < 0 {
+        return Err("cli help missing --max-ticks flag");
+    }
+    if str_index_of(h, "--exit-on-event") < 0 {
+        return Err("cli help missing --exit-on-event flag");
+    }
+    if str_index_of(h, "mcp --stdio") < 0 {
+        return Err("cli help missing mcp --stdio flag");
+    }
+    return Ok(0);
+}
+
+fn verify_cli_must_fail(res: Result[Int, String], tag: String) -> Result[Int, String] {
+    if res.is_ok() {
+        return Err("surface defect: expected failure for " + tag);
+    }
+    return Ok(0);
+}
+
+pub fn verify_surface_cli_heal(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap) -> Result[Int, String] {
+    let r1: Result[Int, String] = verify_cli_must_fail(
+        cli_run_heal(p, fs, fw, env, "../escaped.json"),
+        "heal path traversal"
+    );
+    if r1.is_err() { return r1; }
+
+    let r2: Result[Int, String] = verify_cli_must_fail(
+        cli_run_heal(p, fs, fw, env, "missing_autopsy_for_surface.json"),
+        "heal missing autopsy"
+    );
+    if r2.is_err() { return r2; }
+
+    return Ok(0);
+}
+
+pub fn verify_surface_cli_capsule(fs: &FsReadCap, fw: &FsWriteCap) -> Result[Int, String] {
+    let mut p_bad: List[String] = list_new();
+    p_bad = list_push(p_bad, "pack");
+    p_bad = list_push(p_bad, "../bad_out.bb");
+    let r1: Result[Int, String] = verify_cli_must_fail(
+        cli_run_pack(fs, fw, p_bad),
+        "pack path traversal"
+    );
+    if r1.is_err() { return r1; }
+
+    let mut r_empty: List[String] = list_new();
+    r_empty = list_push(r_empty, "replay");
+    let r2: Result[Int, String] = verify_cli_must_fail(
+        cli_run_replay(fs, r_empty),
+        "replay missing argument"
+    );
+    if r2.is_err() { return r2; }
+
+    let mut r_trav: List[String] = list_new();
+    r_trav = list_push(r_trav, "replay");
+    r_trav = list_push(r_trav, "../bad_in.bb");
+    let r3: Result[Int, String] = verify_cli_must_fail(
+        cli_run_replay(fs, r_trav),
+        "replay path traversal"
+    );
+    if r3.is_err() { return r3; }
+
+    return Ok(0);
+}
+
+pub fn verify_surface_cli_watch(p: &ProcessCap, fs: &FsReadCap) -> Result[Int, String] {
+    let mut w_bad: List[String] = list_new();
+    w_bad = list_push(w_bad, "watch");
+    w_bad = list_push(w_bad, "--unknown-watch-flag");
+    let r1: Result[Int, String] = verify_cli_must_fail(
+        cli_run_watch(p, fs, w_bad),
+        "watch unknown flag"
+    );
+    if r1.is_err() { return r1; }
+
+    let mut w_ticks: List[String] = list_new();
+    w_ticks = list_push(w_ticks, "watch");
+    w_ticks = list_push(w_ticks, "--max-ticks");
+    let r2: Result[Int, String] = verify_cli_must_fail(
+        cli_run_watch(p, fs, w_ticks),
+        "watch missing max-ticks"
+    );
+    if r2.is_err() { return r2; }
+
+    let mut w_zero: List[String] = list_new();
+    w_zero = list_push(w_zero, "watch");
+    w_zero = list_push(w_zero, "--max-ticks");
+    w_zero = list_push(w_zero, "0");
+    let r3: Result[Int, String] = verify_cli_must_fail(
+        cli_run_watch(p, fs, w_zero),
+        "watch invalid max-ticks 0"
+    );
+    if r3.is_err() { return r3; }
+
+    let mut w_trav: List[String] = list_new();
+    w_trav = list_push(w_trav, "watch");
+    w_trav = list_push(w_trav, "--once");
+    w_trav = list_push(w_trav, "../forbidden_watch_dir");
+    let r4: Result[Int, String] = verify_cli_must_fail(
+        cli_run_watch(p, fs, w_trav),
+        "watch path traversal"
+    );
+    if r4.is_err() { return r4; }
+
+    return Ok(0);
+}
+
+pub fn verify_surface_cli(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap) -> Result[Int, String] {
+    let r_help: Result[Int, String] = verify_surface_cli_help();
+    if r_help.is_err() { return r_help; }
+
+    let r_heal: Result[Int, String] = verify_surface_cli_heal(p, fs, fw, env);
+    if r_heal.is_err() { return r_heal; }
+
+    let r_capsule: Result[Int, String] = verify_surface_cli_capsule(fs, fw);
+    if r_capsule.is_err() { return r_capsule; }
+
+    let r_watch: Result[Int, String] = verify_surface_cli_watch(p, fs);
+    if r_watch.is_err() { return r_watch; }
+
+    let mut d_bad: List[String] = list_new();
+    d_bad = list_push(d_bad, "invalid_subcommand_test");
+    let r_disp: Result[Int, String] = verify_cli_must_fail(
+        cli_dispatch(p, fs, fw, env, d_bad),
+        "dispatch unknown subcommand"
+    );
+    if r_disp.is_err() { return r_disp; }
+
+    return Ok(0);
 }
 
 pub fn verify_surface() -> Result[Int, String] {
@@ -76,9 +228,20 @@ pub fn verify_surface() -> Result[Int, String] {
         return Err("telemetry schema TRAP_SIGNAL must be 6");
     }
 
+    let r_help: Result[Int, String] = verify_surface_cli_help();
+    if r_help.is_err() {
+        return r_help;
+    }
+
     return Ok(0);
 }
 
 pub fn verify_surface_run(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap) -> Result[Int, String] {
-    return verify_surface();
+    let r_surf: Result[Int, String] = verify_surface();
+    if r_surf.is_err() { return r_surf; }
+
+    let r_cli: Result[Int, String] = verify_surface_cli(p, fs, fw, env);
+    if r_cli.is_err() { return r_cli; }
+
+    return Ok(0);
 }

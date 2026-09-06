@@ -2,16 +2,18 @@
 //
 // Logline: Re-exports crash autopsy parsing, failure coordinate location, and root-cause classification.
 //
-// Setup: Pure analysis and diagnosis pipeline. Generates compact 1-turn agent diagnostic reports.
+// Setup: Pure analysis, diagnosis, and autonomous source repair pipeline.
 //
 // Beats:
 //   1. Re-export zero-heap JSON scanning utilities.
 //   2. Re-export source coordinate parsing and locator services.
 //   3. Re-export root-cause classification and remediation mapping.
 //   4. Re-export crash autopsy data parser and report formatter.
+//   5. Re-export autonomous self-healing patch engine.
 
 import "autopsy_json.oo";
 import "coordinate_locator.oo";
 import "root_cause.oo";
 import "autopsy_parser.oo";
 import "report_formatter.oo";
+import "self_heal.oo";

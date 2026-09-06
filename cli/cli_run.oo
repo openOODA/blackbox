@@ -5,21 +5,24 @@
 // Setup: ProcessCap, FsReadCap, FsWriteCap, EnvCap. Compiler from env.
 //
 // Beats:
-//   1. Print usage that lists autopsy|diff|inspect|trace|mcp.
+//   1. Print usage that lists autopsy|diff|inspect|trace|mcp|heal|pack|replay|watch.
 //   2. Autopsy reads JSON under FsReadCap and prints a diagnosis.
 //   3. Diff locates oodac and runs tokens.
 //   4. Trace reads flight log; mcp runs standalone stdio server.
 
 import "autopsy/report_formatter.oo";
+import "autopsy/self_heal.oo";
 import "diff/ast_diff.oo";
 import "diff/compiler_runner.oo";
 import "bridge/dir_watcher.oo";
 import "bridge/mcp_server.oo";
 import "record/flight_log.oo";
 import "cli_inspect.oo";
+import "cli_capsule.oo";
+import "cli_watch.oo";
 
 pub fn cli_help() -> String {
-    let mut out: String = "Usage: blackbox autopsy|diff|inspect|trace|mcp [args...]\n\n";
+    let mut out: String = "Usage: blackbox autopsy|diff|inspect|trace|mcp|heal|pack|replay|watch [args...]\n\n";
     out = out + "Subcommands:\n";
     out = out + "  autopsy [path]                 Parse autopsy JSON and print a 1-turn diagnosis\n";
     out = out + "  diff <file.oo>                 Run oodac tokens (OODA_COMPILER or OODAC_BIN)\n";
@@ -27,6 +30,12 @@ pub fn cli_help() -> String {
     out = out + "                                 Run a live oodac stage and print child text\n";
     out = out + "  trace                          Print a written flight log if one exists\n";
     out = out + "  mcp --stdio                    Start standalone JSON-RPC 2.0 MCP server\n";
+    out = out + "  heal [path]                    Heal source defect from autopsy coordinates\n";
+    out = out + "  pack [file.bb] [autopsy.json] [flight.json]\n";
+    out = out + "                                 Bundle flight telemetry, autopsy, and registers into .bb\n";
+    out = out + "  replay <file.bb>               Verify integrity and reconstruct crash diagnosis\n";
+    out = out + "  watch [dir] [--once] [--max-ticks N] [--exit-on-event]\n";
+    out = out + "                                 Monitor directory for crash artifacts and emit repair recipe\n";
     out = out + "  version                        Display blackbox version\n";
     out = out + "  help                           Display this usage guide\n";
     return out;
@@ -107,6 +116,30 @@ pub fn cli_run_trace(fs: &FsReadCap) -> Result[Int, String] {
     return Ok(0);
 }
 
+pub fn cli_run_heal(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap, path: String) -> Result[Int, String] {
+    let target: String = if chars_len(path) > 0 { path } else { dir_watcher_autopsy_file() };
+    if str_index_of(target, "..") >= 0 {
+        return cli_err("path traversal rejected");
+    }
+    if !path_exists(fs, target) {
+        return cli_err("autopsy file not found: " + target);
+    }
+    let rd: Result[String, String] = dir_watcher_read_autopsy(fs, target);
+    if rd.is_err() {
+        let e: String = match rd { Ok(_) => "", Err(m) => m };
+        return cli_err(e);
+    }
+    let json: String = match rd { Ok(s) => s, Err(_) => "" };
+    let r_heal: Result[String, String] = heal_from_autopsy_json(p, fs, fw, env, json);
+    if r_heal.is_err() {
+        let e2: String = match r_heal { Ok(_) => "", Err(m) => m };
+        return cli_err(e2);
+    }
+    let report: String = match r_heal { Ok(s) => s, Err(_) => "" };
+    println(report);
+    return Ok(0);
+}
+
 pub fn cli_dispatch(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap, args: List[String]) -> Result[Int, String] {
     let n: Int = list_len(args);
     if n == 0 {
@@ -115,6 +148,19 @@ pub fn cli_dispatch(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCa
     }
     let subcmd: String = list_get(args, 0);
 
+    if subcmd == "heal" {
+        let pth: String = if n > 1 { list_get(args, 1) } else { "" };
+        return cli_run_heal(p, fs, fw, env, pth);
+    }
+    if subcmd == "pack" {
+        return cli_run_pack(fs, fw, args);
+    }
+    if subcmd == "replay" {
+        return cli_run_replay(fs, args);
+    }
+    if subcmd == "watch" {
+        return cli_run_watch(p, fs, args);
+    }
     if subcmd == "autopsy" {
         let pth: String = if n > 1 { list_get(args, 1) } else { "" };
         return cli_run_autopsy(fs, pth);

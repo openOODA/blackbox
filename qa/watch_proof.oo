@@ -1,0 +1,210 @@
+// # Real-Time Crash Sentinel Proof Suite
+//
+// Logline: Proves directory monitoring, autopsy crash detection, path traversal rejection, and headless execution.
+//
+// Setup: Fails closed on any defect. Exercises one-shot probe, stateful ticks, creation, modification, and determinism.
+//
+// Beats:
+//   1. Assert clean directory probe in --once mode returns clean status.
+//   2. Assert existing autopsy detection in --once mode emits 1-turn repair recipe.
+//   3. Assert stateful polling tick detects autopsy creation event and report.
+//   4. Assert stateful polling tick detects autopsy modification event.
+//   5. Assert bounded loop with --max-ticks terminates with code 0.
+//   6. Assert path traversal rejection for .. sequences fails closed.
+//   7. Assert double-run determinism proof: Run_1 == Run_2.
+
+import "bridge/dir_watcher.oo";
+import "cli/cli_watch.oo";
+
+fn watch_fixture_sample1() -> String {
+    let mut j: String = "{\n  \"schema_version\": \"1.0.0\",\n  \"crash_signal\": 11,\n  \"signal_name\": \"SIGSEGV\",\n";
+    j = j + "  \"fault_address\": \"0x0000000000000000\",\n  \"failure_coordinate\": \"core/alloc/arena.oo:42:5:arena_alloc\",\n";
+    j = j + "  \"root_cause\": \"NULL_POINTER_DEREFERENCE\",\n  \"description\": \"null deref\",\n";
+    j = j + "  \"rip\": \"0x000055555556a1b0\",\n  \"rsp\": \"0x00007fffffffe210\",\n  \"rbp\": \"0x00007fffffffe240\",\n";
+    j = j + "  \"remediation\": \"Add null check\"\n}";
+    return j;
+}
+
+fn watch_fixture_sample2() -> String {
+    let mut j: String = "{\n  \"schema_version\": \"1.0.0\",\n  \"crash_signal\": 6,\n  \"signal_name\": \"SIGABRT\",\n";
+    j = j + "  \"fault_address\": \"0x000055555556b100\",\n  \"failure_coordinate\": \"fs/file.oo:18:2:write_file\",\n";
+    j = j + "  \"root_cause\": \"CAPABILITY_TRAP_VIOLATION\",\n  \"description\": \"capability trap\",\n";
+    j = j + "  \"cap_trapped\": true,\n  \"cap_mask_required\": 3,\n  \"cap_mask_held\": 1,\n";
+    j = j + "  \"remediation\": \"Add capability guard\"\n}";
+    return j;
+}
+
+fn watch_test_dir_path(fs: &FsReadCap) -> String {
+    if path_exists(fs, "blackbox/qa/autopsy_null.json") {
+        return "blackbox/qa/watch_test_dir";
+    }
+    return "qa/watch_test_dir";
+}
+
+fn proof_watch_clean_dir(fs: &FsReadCap) -> Result[Int, String] {
+    let r_chk: Result[String, String] = dir_watcher_check_once(fs, ".");
+    if r_chk.is_err() {
+        let e: String = match r_chk { Ok(_) => "", Err(m) => m };
+        return Err("proof_watch_clean_dir failed: " + e);
+    }
+    let msg: String = match r_chk { Ok(s) => s, Err(_) => "" };
+    if str_index_of(msg, "clean") < 0 {
+        return Err("proof_watch_clean_dir: expected clean indicator, got: " + msg);
+    }
+    return Ok(0);
+}
+
+fn proof_watch_existing_autopsy_once(fs: &FsReadCap) -> Result[Int, String] {
+    let null_path: String = if path_exists(fs, "blackbox/qa/autopsy_null.json") {
+        "blackbox/qa/autopsy_null.json"
+    } else {
+        "qa/autopsy_null.json"
+    };
+    let r_chk: Result[String, String] = dir_watcher_check_once(fs, null_path);
+    if r_chk.is_err() {
+        let e: String = match r_chk { Ok(_) => "", Err(m) => m };
+        return Err("proof_watch_existing_autopsy_once failed: " + e);
+    }
+    let rep: String = match r_chk { Ok(s) => s, Err(_) => "" };
+    if str_index_of(rep, "=== BLACKBOX CRASH AUTOPSY ===") < 0 {
+        return Err("proof_watch_existing_autopsy_once: missing banner");
+    }
+    if str_index_of(rep, "NULL_POINTER_DEREFERENCE") < 0 {
+        return Err("proof_watch_existing_autopsy_once: missing root cause");
+    }
+    if str_index_of(rep, "arena.oo:42") < 0 {
+        return Err("proof_watch_existing_autopsy_once: missing coordinate");
+    }
+    if str_index_of(rep, "1-Turn Agent Action:") < 0 {
+        return Err("proof_watch_existing_autopsy_once: missing 1-turn recipe");
+    }
+    return Ok(0);
+}
+
+fn proof_watch_ticks_and_events(fs: &FsReadCap, fw: &FsWriteCap, dir_path: String) -> Result[Int, String] {
+    let a_file: String = dir_path + "/autopsy.json";
+    let _rm0: Result[Void, String] = oo_fs_remove_file(fw, a_file);
+
+    let r_init: Result[DirWatchState, String] = dir_watcher_state_init(fs, dir_path);
+    if r_init.is_err() {
+        let e_init: String = match r_init { Ok(_) => "", Err(m) => m };
+        return Err("proof_watch_ticks_and_events init failed: " + e_init);
+    }
+    let mut state: DirWatchState = match r_init { Ok(s) => s, Err(_) => return Err("unreachable") };
+    if state.last_autopsy_exists {
+        return Err("proof_watch_ticks_and_events: autopsy should not exist initially");
+    }
+
+    let _w1: Result[Void, String] = write_file(fw, a_file, watch_fixture_sample1());
+
+    let r_t1: Result[DirWatchTick, String] = dir_watcher_poll_tick(fs, state);
+    if r_t1.is_err() {
+        let e1: String = match r_t1 { Ok(_) => "", Err(m) => m };
+        return Err("proof_watch_ticks_and_events tick1 failed: " + e1);
+    }
+    let t1: DirWatchTick = match r_t1 { Ok(t) => t, Err(_) => return Err("unreachable") };
+    if !t1.event_fired { return Err("proof_watch_ticks_and_events: expected event on creation"); }
+    if t1.event_type != "AUTOPSY_CREATED" { return Err("expected AUTOPSY_CREATED, got " + t1.event_type); }
+    if str_index_of(t1.report, "NULL_POINTER_DEREFERENCE") < 0 { return Err("missing root cause in creation report"); }
+    state = t1.state;
+    if state.event_count != 1 { return Err("expected event_count 1, got " + state.event_count.to_string()); }
+
+    let r_t_quiet: Result[DirWatchTick, String] = dir_watcher_poll_tick(fs, state);
+    if r_t_quiet.is_err() { return Err("quiet tick failed"); }
+    let t_quiet: DirWatchTick = match r_t_quiet { Ok(t) => t, Err(_) => return Err("unreachable") };
+    if t_quiet.event_fired { return Err("quiet tick should not fire event"); }
+    state = t_quiet.state;
+
+    let _w2: Result[Void, String] = write_file(fw, a_file, watch_fixture_sample2());
+
+    let r_t2: Result[DirWatchTick, String] = dir_watcher_poll_tick(fs, state);
+    if r_t2.is_err() { return Err("tick2 failed"); }
+    let t2: DirWatchTick = match r_t2 { Ok(t) => t, Err(_) => return Err("unreachable") };
+    if !t2.event_fired { return Err("expected event on modification"); }
+    if t2.event_type != "AUTOPSY_MODIFIED" { return Err("expected AUTOPSY_MODIFIED, got " + t2.event_type); }
+    if str_index_of(t2.report, "CAPABILITY_TRAP_VIOLATION") < 0 { return Err("missing root cause in mod report"); }
+    state = t2.state;
+    if state.event_count != 2 { return Err("expected event_count 2, got " + state.event_count.to_string()); }
+
+    return Ok(0);
+}
+
+fn proof_watch_bounded_loop(p: &ProcessCap, fs: &FsReadCap, dir_path: String) -> Result[Int, String] {
+    let mut args: List[String] = list_new();
+    args = list_push(args, "watch");
+    args = list_push(args, dir_path);
+    args = list_push(args, "--max-ticks");
+    args = list_push(args, "3");
+    args = list_push(args, "--interval-sec");
+    args = list_push(args, "0");
+
+    let r_cli: Result[Int, String] = cli_run_watch(p, fs, args);
+    if r_cli.is_err() {
+        let e: String = match r_cli { Ok(_) => "", Err(m) => m };
+        return Err("proof_watch_bounded_loop failed: " + e);
+    }
+    return Ok(0);
+}
+
+fn proof_watch_path_traversal(p: &ProcessCap, fs: &FsReadCap) -> Result[Int, String] {
+    let p1: DirWatchPaths = dir_watcher_resolve_paths(fs, "../invalid");
+    if p1.valid { return Err("expected ../invalid to be rejected"); }
+    if str_index_of(p1.err, "path traversal rejected") < 0 { return Err("expected path traversal rejected err"); }
+
+    let r_chk: Result[String, String] = dir_watcher_check_once(fs, "qa/../../secret");
+    if r_chk.is_ok() { return Err("expected qa/../../secret check_once to fail"); }
+
+    let mut args: List[String] = list_new();
+    args = list_push(args, "watch");
+    args = list_push(args, "../etc");
+    args = list_push(args, "--once");
+    let r_cli: Result[Int, String] = cli_run_watch(p, fs, args);
+    if r_cli.is_ok() { return Err("expected cli_run_watch with .. to fail"); }
+
+    return Ok(0);
+}
+
+fn proof_watch_double_run(fs: &FsReadCap) -> Result[Int, String] {
+    let null_path: String = if path_exists(fs, "blackbox/qa/autopsy_null.json") {
+        "blackbox/qa/autopsy_null.json"
+    } else {
+        "qa/autopsy_null.json"
+    };
+
+    let r1: Result[String, String] = dir_watcher_check_once(fs, null_path);
+    let r2: Result[String, String] = dir_watcher_check_once(fs, null_path);
+    if r1.is_err() || r2.is_err() { return Err("double run failed"); }
+
+    let s1: String = match r1 { Ok(s) => s, Err(_) => "" };
+    let s2: String = match r2 { Ok(s) => s, Err(_) => "" };
+    if s1 != s2 { return Err("proof_watch_double_run determinism failed: Run_1 != Run_2"); }
+    if chars_len(s1) == 0 { return Err("proof_watch_double_run: empty report"); }
+
+    return Ok(0);
+}
+
+pub fn watch_proof_run(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap) -> Result[Int, String] {
+    let t_dir: String = watch_test_dir_path(fs);
+    let _mk: Result[Void, String] = oo_fs_mkdir(fw, t_dir);
+
+    let r1: Result[Int, String] = proof_watch_clean_dir(fs);
+    if r1.is_err() { return r1; }
+
+    let r2: Result[Int, String] = proof_watch_existing_autopsy_once(fs);
+    if r2.is_err() { return r2; }
+
+    let r3: Result[Int, String] = proof_watch_ticks_and_events(fs, fw, t_dir);
+    if r3.is_err() { return r3; }
+
+    let r4: Result[Int, String] = proof_watch_bounded_loop(p, fs, t_dir);
+    if r4.is_err() { return r4; }
+
+    let r5: Result[Int, String] = proof_watch_path_traversal(p, fs);
+    if r5.is_err() { return r5; }
+
+    let r6: Result[Int, String] = proof_watch_double_run(fs);
+    if r6.is_err() { return r6; }
+
+    let _rm_a: Result[Void, String] = oo_fs_remove_file(fw, t_dir + "/autopsy.json");
+    return Ok(0);
+}

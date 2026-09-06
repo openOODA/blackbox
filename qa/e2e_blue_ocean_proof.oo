@@ -1,0 +1,226 @@
+// # Blue Ocean End-to-End Proof Suite
+//
+// Logline: Proves integrated multi-tier lifecycle: flight trace -> pack -> replay -> heal -> watch with double-run determinism.
+//
+// Setup: ProcessCap, FsReadCap, FsWriteCap, EnvCap. Fails closed on any invariant breach or output drift.
+//
+// Beats:
+//   1. Build flight telemetry events and format chronological flight trace.
+//   2. Pack flight events and crash autopsy into authenticated .bb capsule container.
+//   3. Unpack and replay .bb capsule, verifying CRC-32 checksum, registers, and diagnosis.
+//   4. Heal target defect from replayed crash autopsy with compiler validation and idempotency.
+//   5. Sentinel watch verifies detection of crash artifacts and formats 1-turn repair recipe.
+//   6. Verify fail-closed adversarial guards (tampered checksum, oob coordinate, path traversal).
+//   7. Verify full pipeline double-run determinism: Run_1 == Run_2.
+
+import "record/flight_capsule.oo";
+import "autopsy/self_heal.oo";
+import "bridge/dir_watcher.oo";
+import "record/flight_log.oo";
+
+type CapsuleData = struct {
+    flight_json: String, autopsy_json: String, registers_rip: String,
+    registers_rsp: String, registers_rbp: String, caps_mask: Int, crc32: Int
+};
+
+fn e2e_sample_flight() -> String {
+    let mut fl: String = "{\"schema_version\":\"1.0.0\",\"capacity\":4,\"total_events\":3,\"events\":[";
+    fl = fl + "{\"seq\":0,\"phase\":1,\"type\":1,\"detail\":\"INIT runtime telemetry\",\"timestamp\":1000},";
+    fl = fl + "{\"seq\":1,\"phase\":2,\"type\":2,\"detail\":\"EXEC acquire FsWriteCap\",\"timestamp\":1010},";
+    return fl + "{\"seq\":2,\"phase\":3,\"type\":6,\"detail\":\"FAULT trapped SIGSEGV\",\"timestamp\":1020}]}";
+}
+
+fn e2e_sample_autopsy(target: String) -> String {
+    let mut j: String = "{\n  \"schema_version\": \"1.0.0\",\n  \"crash_signal\": 11,\n  \"signal_name\": \"SIGSEGV\",\n";
+    j = j + "  \"fault_address\": \"0x0\",\n  \"failure_coordinate\": \"" + target + ":8:5:e2e_scratch\",\n";
+    j = j + "  \"root_cause\": \"NULL_POINTER_DEREFERENCE\",\n  \"description\": \"null deref in e2e_scratch\",\n";
+    j = j + "  \"rip\": \"0x000055555556d300\",\n  \"rsp\": \"0x00007fffffffe180\",\n  \"rbp\": \"0x00007fffffffe1b0\",\n  \"cap_mask_held\": 3,\n";
+    return j + "  \"remediation\": \"Add null guard `if ptr == 0 { return Err(\\\"null pointer dereference\\\"); }` at " + target + ":8:5\"\n}";
+}
+
+fn e2e_initial_code() -> String {
+    let mut s: String = "// # E2E Scratch Target\n// Logline: Target module for e2e self-healing.\n// Setup: Scratch function for patch injection.\n// Beats:\n//   1. Function body.\n\n";
+    return s + "pub fn e2e_scratch(ptr: Int) -> Result[Int, String] {\n    let val: Int = ptr + 10;\n    return Ok(val);\n}\n";
+}
+
+fn e2e_prefix(fs: &FsReadCap) -> String {
+    if path_exists(fs, "blackbox/qa/diff_sample.oo") { return "blackbox/qa/"; }
+    return "qa/";
+}
+
+fn proof_pipeline_full_lifecycle(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap) -> Result[Int, String] {
+    let pfx: String = e2e_prefix(fs);
+    let target: String = pfx + "e2e_scratch.oo";
+    let wdir: String = pfx + "watch_test_dir";
+    let _mk: Result[Void, String] = oo_fs_mkdir(fw, wdir);
+    let fl_p: String = pfx + "e2e_fl.json";
+    let au_p: String = pfx + "e2e_au.json";
+    let bb_p: String = pfx + "e2e_main.bb";
+
+    let fl_str: String = e2e_sample_flight();
+    let r_tr: Result[String, String] = flight_format_from_json(fl_str);
+    if r_tr.is_err() { return Err("proof_pipeline: flight format failed"); }
+    let tr_text: String = match r_tr { Ok(s) => s, Err(_) => "" };
+    if str_index_of(tr_text, "INIT runtime telemetry") < 0 { return Err("flight trace missing event"); }
+
+    let _w1: Result[Void, String] = write_file(fw, fl_p, fl_str);
+    let _w2: Result[Void, String] = write_file(fw, au_p, e2e_sample_autopsy(target));
+    let _wt: Result[Void, String] = write_file(fw, target, e2e_initial_code());
+
+    let r_pk: Result[String, String] = capsule_pack(fs, fw, fl_p, au_p, bb_p);
+    if r_pk.is_err() {
+        let e_pk: String = match r_pk { Ok(_) => "", Err(m) => m };
+        return Err("proof_pipeline: capsule pack failed: " + e_pk);
+    }
+
+    let r_un: Result[CapsuleData, String] = capsule_unpack(fs, bb_p);
+    if r_un.is_err() { return Err("proof_pipeline: capsule unpack failed"); }
+    let cdata: CapsuleData = match r_un { Ok(d) => d, Err(_) => return Err("unreachable") };
+    if cdata.registers_rip != "0x000055555556d300" { return Err("RIP mismatch in capsule"); }
+    if cdata.crc32 == 0 { return Err("CRC32 is 0"); }
+
+    let r_rep: Result[String, String] = capsule_replay(fs, bb_p);
+    if r_rep.is_err() { return Err("proof_pipeline: capsule replay failed"); }
+    let rep: String = match r_rep { Ok(s) => s, Err(_) => "" };
+    if str_index_of(rep, "NULL_POINTER_DEREFERENCE") < 0 { return Err("replay missing diagnosis"); }
+
+    let r_hl: Result[String, String] = heal_from_autopsy_json(p, fs, fw, env, cdata.autopsy_json);
+    if r_hl.is_err() {
+        let e: String = match r_hl { Ok(_) => "", Err(m) => m };
+        return Err("proof_pipeline: heal failed: " + e);
+    }
+    let h_rep: String = match r_hl { Ok(s) => s, Err(_) => "" };
+    if str_index_of(h_rep, "Status: HEALED") < 0 { return Err("heal report missing HEALED"); }
+
+    let rd_healed: Result[String, String] = read_file(fs, target);
+    let healed_txt: String = match rd_healed { Ok(s) => s, Err(_) => "" };
+    if str_index_of(healed_txt, "    if ptr == 0 { return Err(\"null pointer dereference\"); }") < 0 {
+        return Err("healed source missing guard");
+    }
+
+    let r_idemp: Result[String, String] = heal_from_autopsy_json(p, fs, fw, env, cdata.autopsy_json);
+    if r_idemp.is_err() { return Err("proof_pipeline: idempotent heal failed"); }
+    let id_rep: String = match r_idemp { Ok(s) => s, Err(_) => "" };
+    if str_index_of(id_rep, "Status: ALREADY_HEALED") < 0 { return Err("expected ALREADY_HEALED"); }
+
+    let w_au: String = wdir + "/autopsy.json";
+    let _wa: Result[Void, String] = write_file(fw, w_au, cdata.autopsy_json);
+    let r_wch: Result[String, String] = dir_watcher_check_once(fs, wdir);
+    if r_wch.is_err() { return Err("proof_pipeline: dir watcher check failed"); }
+    let w_rep: String = match r_wch { Ok(s) => s, Err(_) => "" };
+    if str_index_of(w_rep, "1-Turn Agent Action:") < 0 { return Err("watcher missing 1-turn recipe"); }
+
+    let _c1: Result[Void, String] = oo_fs_remove_file(fw, wdir + "/autopsy.json");
+    let _c2: Result[Void, String] = oo_fs_remove_file(fw, pfx + "e2e_fl.json");
+    let _c3: Result[Void, String] = oo_fs_remove_file(fw, pfx + "e2e_au.json");
+    let _c4: Result[Void, String] = oo_fs_remove_file(fw, pfx + "e2e_main.bb");
+    let _c5: Result[Void, String] = oo_fs_remove_file(fw, pfx + "e2e_scratch.oo");
+    return Ok(0);
+}
+
+fn proof_pipeline_adversarial(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap) -> Result[Int, String] {
+    let pfx: String = e2e_prefix(fs);
+    let target: String = pfx + "e2e_scratch.oo";
+    let fl_p: String = pfx + "e2e_adv_fl.json";
+    let au_p: String = pfx + "e2e_adv_au.json";
+    let bb_p: String = pfx + "e2e_adv.bb";
+    let _w1: Result[Void, String] = write_file(fw, fl_p, e2e_sample_flight());
+    let _w2: Result[Void, String] = write_file(fw, au_p, e2e_sample_autopsy(target));
+    let _pk: Result[String, String] = capsule_pack(fs, fw, fl_p, au_p, bb_p);
+
+    let rd_bb: Result[String, String] = read_file(fs, bb_p);
+    let valid_bb: String = match rd_bb { Ok(s) => s, Err(_) => "" };
+    let idx: Int = str_index_of(valid_bb, "0x000055555556d300");
+    if idx < 0 { return Err("adversarial: rip not found in capsule"); }
+    let tampered: String = str_slice(valid_bb, 0, idx) + "0x000055555556d309" + str_slice(valid_bb, idx + 18, chars_len(valid_bb));
+    let tamp_p: String = pfx + "e2e_tamp.bb";
+    let _wt: Result[Void, String] = write_file(fw, tamp_p, tampered);
+
+    let r_tamp: Result[CapsuleData, String] = capsule_unpack(fs, tamp_p);
+    if r_tamp.is_ok() { return Err("adversarial: tampered capsule must fail"); }
+    let e_tamp: String = match r_tamp { Ok(_) => "", Err(m) => m };
+    if str_index_of(e_tamp, "checksum mismatch") < 0 { return Err("expected checksum mismatch error"); }
+
+    let _w3: Result[Void, String] = write_file(fw, target, e2e_initial_code());
+    let mut bad_au: String = "{\n  \"schema_version\": \"1.0.0\",\n  \"crash_signal\": 11,\n  \"signal_name\": \"SIGSEGV\",\n";
+    bad_au = bad_au + "  \"failure_coordinate\": \"" + target + ":9999:1:e2e_scratch\",\n  \"root_cause\": \"NULL_POINTER_DEREFERENCE\",\n  \"remediation\": \"Add null guard\"\n}";
+    let r_oob: Result[String, String] = heal_from_autopsy_json(p, fs, fw, env, bad_au);
+    if r_oob.is_ok() { return Err("adversarial: oob line must fail closed"); }
+
+    let p_trav: DirWatchPaths = dir_watcher_resolve_paths(fs, "../secret");
+    if p_trav.valid { return Err("adversarial: watch path traversal must fail"); }
+
+    let _c1: Result[Void, String] = oo_fs_remove_file(fw, pfx + "e2e_adv_fl.json");
+    let _c2: Result[Void, String] = oo_fs_remove_file(fw, pfx + "e2e_adv_au.json");
+    let _c3: Result[Void, String] = oo_fs_remove_file(fw, pfx + "e2e_adv.bb");
+    let _c4: Result[Void, String] = oo_fs_remove_file(fw, pfx + "e2e_tamp.bb");
+    let _c5: Result[Void, String] = oo_fs_remove_file(fw, pfx + "e2e_scratch.oo");
+    return Ok(0);
+}
+
+fn proof_pipeline_double_run(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap) -> Result[Int, String] {
+    let pfx: String = e2e_prefix(fs);
+    let target1: String = pfx + "e2e_scratch.oo";
+    let target2: String = pfx + "e2e_scratch2.oo";
+    let wdir: String = pfx + "watch_test_dir";
+    let f_path: String = pfx + "e2e_det_fl.json";
+    let a1_path: String = pfx + "e2e_det_au1.json";
+    let a2_path: String = pfx + "e2e_det_au2.json";
+    let bb1_path: String = pfx + "e2e_det1.bb";
+    let bb2_path: String = pfx + "e2e_det2.bb";
+
+    let fl: String = e2e_sample_flight();
+    let _wf: Result[Void, String] = write_file(fw, f_path, fl);
+    let _wa1: Result[Void, String] = write_file(fw, a1_path, e2e_sample_autopsy(target1));
+    let _wa2: Result[Void, String] = write_file(fw, a2_path, e2e_sample_autopsy(target2));
+    let _wt1: Result[Void, String] = write_file(fw, target1, e2e_initial_code());
+    let _wt2: Result[Void, String] = write_file(fw, target2, e2e_initial_code());
+
+    let _pk1: Result[String, String] = capsule_pack(fs, fw, f_path, a1_path, bb1_path);
+    let _pk2: Result[String, String] = capsule_pack(fs, fw, f_path, a1_path, bb2_path);
+
+    let rd1: Result[String, String] = read_file(fs, bb1_path);
+    let rd2: Result[String, String] = read_file(fs, bb2_path);
+    let bytes1: String = match rd1 { Ok(s) => s, Err(_) => "" };
+    let bytes2: String = match rd2 { Ok(s) => s, Err(_) => "" };
+    if bytes1 != bytes2 { return Err("double-run determinism: capsule bytes Run_1 != Run_2"); }
+
+    let r_rep1: Result[String, String] = capsule_replay(fs, bb1_path);
+    let r_rep2: Result[String, String] = capsule_replay(fs, bb2_path);
+    let rep1: String = match r_rep1 { Ok(s) => s, Err(_) => "" };
+    let rep2: String = match r_rep2 { Ok(s) => s, Err(_) => "" };
+    if rep1 != rep2 { return Err("double-run determinism: replay report Run_1 != Run_2"); }
+
+    let _h1: Result[String, String] = heal_from_autopsy_json(p, fs, fw, env, e2e_sample_autopsy(target1));
+    let _h2: Result[String, String] = heal_from_autopsy_json(p, fs, fw, env, e2e_sample_autopsy(target2));
+    let rd_h1: Result[String, String] = read_file(fs, target1);
+    let rd_h2: Result[String, String] = read_file(fs, target2);
+    let c_h1: String = match rd_h1 { Ok(s) => s, Err(_) => "" };
+    let c_h2: String = match rd_h2 { Ok(s) => s, Err(_) => "" };
+    if c_h1 != c_h2 { return Err("double-run determinism: patched code Run_1 != Run_2"); }
+
+    let w1: Result[String, String] = dir_watcher_check_once(fs, wdir);
+    let w2: Result[String, String] = dir_watcher_check_once(fs, wdir);
+    let wr1: String = match w1 { Ok(s) => s, Err(_) => "" };
+    let wr2: String = match w2 { Ok(s) => s, Err(_) => "" };
+    if wr1 != wr2 { return Err("double-run determinism: watcher check Run_1 != Run_2"); }
+
+    let _c1: Result[Void, String] = oo_fs_remove_file(fw, pfx + "e2e_det_fl.json");
+    let _c2: Result[Void, String] = oo_fs_remove_file(fw, pfx + "e2e_det_au1.json");
+    let _c3: Result[Void, String] = oo_fs_remove_file(fw, pfx + "e2e_det_au2.json");
+    let _c4: Result[Void, String] = oo_fs_remove_file(fw, pfx + "e2e_det1.bb");
+    let _c5: Result[Void, String] = oo_fs_remove_file(fw, pfx + "e2e_det2.bb");
+    let _c6: Result[Void, String] = oo_fs_remove_file(fw, pfx + "e2e_scratch.oo");
+    let _c7: Result[Void, String] = oo_fs_remove_file(fw, pfx + "e2e_scratch2.oo");
+    return Ok(0);
+}
+
+pub fn e2e_blue_ocean_proof_run(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap) -> Result[Int, String] {
+    let r1: Result[Int, String] = proof_pipeline_full_lifecycle(p, fs, fw, env);
+    if r1.is_err() { return r1; }
+    let r2: Result[Int, String] = proof_pipeline_adversarial(p, fs, fw, env);
+    if r2.is_err() { return r2; }
+    let r3: Result[Int, String] = proof_pipeline_double_run(p, fs, fw, env);
+    if r3.is_err() { return r3; }
+    return Ok(0);
+}

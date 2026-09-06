@@ -1,0 +1,244 @@
+// # Autonomous Self-Healing Engine
+//
+// Logline: Generates deterministic patch guards from autopsy coordinates and applies them under FsWriteCap.
+//
+// Setup: ProcessCap, FsReadCap, FsWriteCap, EnvCap. Rollback to original on compiler check failure.
+//
+// Beats:
+//   1. Extract failure coordinates and suggested patch guards from crash autopsy records.
+//   2. Validate coordinate bounds and fail closed without touching target file.
+//   3. Generate deterministic indented patches with idempotency checking.
+//   4. Apply patch under FsWriteCap and validate via compiler check with automatic rollback.
+
+import "coordinate_locator.oo";
+import "root_cause.oo";
+import "autopsy_parser.oo";
+import "diff/compiler_runner.oo";
+
+type AutopsyStackFrame = struct {
+    frame_num: Int, address: String, symbol: String, location: String
+};
+
+type AutopsyData = struct {
+    schema_version: String, crash_signal: Int, signal_name: String,
+    fault_address: String, failure_coordinate: String, root_cause: String,
+    description: String, backtrace: List[AutopsyStackFrame],
+    registers_rip: String, registers_rsp: String, registers_rbp: String,
+    cap_trapped: Bool, cap_mask_required: Int, cap_mask_held: Int,
+    granted_caps: List[String], remediation: String
+};
+
+pub fn heal_extract_backticks(s: String) -> String {
+    let n: Int = chars_len(s);
+    let mut first: Int = 0 - 1;
+    let mut i: Int = 0;
+    while i < n {
+        if char_at(s, i) == "`" {
+            if first < 0 { first = i; } else { return str_slice(s, first + 1, i); }
+        }
+        i = i + 1;
+    }
+    return "";
+}
+
+pub fn heal_canonical_guard(root_cause: String) -> String {
+    if root_cause == "NULL_POINTER_DEREFERENCE" { return "if ptr == 0 { return Err(\"null pointer dereference\"); }"; }
+    if root_cause == "CAPABILITY_TRAP_VIOLATION" { return "if (caps & mask) != mask { return Err(\"missing capability\"); }"; }
+    if root_cause == "ARENA_MEMORY_EXHAUSTION" { return "if arena_remaining(arena) < alloc_size { return Err(\"arena out of memory\"); }"; }
+    if root_cause == "BUS_ERROR" { return "if (addr & (align - 1)) != 0 { return Err(\"misaligned memory access\"); }"; }
+    if root_cause == "ILLEGAL_INSTRUCTION" { return "if !cpu_supports_feature(flag) { return Err(\"unsupported instruction opcode\"); }"; }
+    if root_cause == "DIVIDE_BY_ZERO" { return "if divisor == 0 { return Err(\"division by zero\"); }"; }
+    if root_cause == "ABORT_TRIGGERED" { return "if !precondition { return Err(\"precondition violation\"); }"; }
+    return "if !precondition { return Err(\"precondition violation\"); }";
+}
+
+pub fn heal_unescape_quotes(s: String) -> String {
+    let n: Int = chars_len(s);
+    let mut out: String = "";
+    let mut i: Int = 0;
+    while i < n {
+        let c: String = char_at(s, i);
+        if c == "\\" && (i + 1) < n && char_at(s, i + 1) == "\"" {
+            out = out + "\"";
+            i = i + 2;
+            continue;
+        }
+        out = out + c;
+        i = i + 1;
+    }
+    return out;
+}
+
+pub fn heal_extract_guard(remediation: String, root_cause: String) -> String {
+    let bt: String = heal_extract_backticks(remediation);
+    if chars_len(bt) > 0 { return heal_unescape_quotes(bt); }
+    let trimmed: String = str_trim(remediation);
+    if chars_len(trimmed) >= 3 && str_slice(trimmed, 0, 3) == "if " { return heal_unescape_quotes(trimmed); }
+    return heal_canonical_guard(root_cause);
+}
+
+pub fn heal_extract_indent(line: String) -> String {
+    let n: Int = chars_len(line);
+    let mut i: Int = 0;
+    while i < n {
+        let c: String = char_at(line, i);
+        if c != " " && c != "\t" { break; }
+        i = i + 1;
+    }
+    return str_slice(line, 0, i);
+}
+
+pub fn heal_split_lines(text: String) -> List[String] {
+    let mut lines: List[String] = list_new();
+    let n: Int = chars_len(text);
+    if n == 0 { return lines; }
+    let mut cur: String = "";
+    let mut i: Int = 0;
+    while i < n {
+        let c: String = char_at(text, i);
+        if c == "\n" {
+            let clen: Int = chars_len(cur);
+            if clen > 0 && char_at(cur, clen - 1) == "\r" { cur = str_slice(cur, 0, clen - 1); }
+            lines = list_push(lines, cur);
+            cur = "";
+        } else { cur = cur + c; }
+        i = i + 1;
+    }
+    if chars_len(cur) > 0 {
+        let clen2: Int = chars_len(cur);
+        if char_at(cur, clen2 - 1) == "\r" { cur = str_slice(cur, 0, clen2 - 1); }
+        lines = list_push(lines, cur);
+    }
+    return lines;
+}
+
+pub fn heal_join_lines(lines: List[String]) -> String {
+    let n: Int = list_len(lines);
+    let mut out: String = "";
+    let mut i: Int = 0;
+    while i < n {
+        out = out + list_get(lines, i) + "\n";
+        i = i + 1;
+    }
+    return out;
+}
+
+pub fn heal_generate_patch(source_text: String, coord: FailureCoordinate, guard: String) -> Result[String, String] {
+    if coord.line_num <= 0 { return Err("invalid coordinate: line must be positive"); }
+    let clean_guard: String = heal_unescape_quotes(guard);
+    if chars_len(clean_guard) == 0 { return Err("heal: empty patch guard"); }
+    let lines: List[String] = heal_split_lines(source_text);
+    let total_lines: Int = list_len(lines);
+    if coord.line_num > total_lines {
+        return Err("heal: line " + coord.line_num.to_string() + " out of bounds (file has " + total_lines.to_string() + " lines)");
+    }
+    if total_lines >= 256 {
+        return Err("patch would violate 256-line constitutional ceiling");
+    }
+    let target_idx: Int = coord.line_num - 1;
+    let target_line: String = list_get(lines, target_idx);
+    let indent: String = heal_extract_indent(target_line);
+    let guard_line: String = indent + clean_guard;
+
+    if target_idx > 0 {
+        let prev: String = list_get(lines, target_idx - 1);
+        if prev == guard_line || str_index_of(prev, clean_guard) >= 0 { return Ok(source_text); }
+    }
+    if target_idx > 1 {
+        let prev2: String = list_get(lines, target_idx - 2);
+        if prev2 == guard_line || str_index_of(prev2, clean_guard) >= 0 { return Ok(source_text); }
+    }
+    if target_line == guard_line || str_index_of(target_line, clean_guard) >= 0 { return Ok(source_text); }
+
+    let mut out_lines: List[String] = list_new();
+    let mut i: Int = 0;
+    while i < total_lines {
+        if i == target_idx { out_lines = list_push(out_lines, guard_line); }
+        out_lines = list_push(out_lines, list_get(lines, i));
+        i = i + 1;
+    }
+    return Ok(heal_join_lines(out_lines));
+}
+
+pub fn heal_apply(fw: &FsWriteCap, file_path: String, patched_text: String) -> Result[Void, String] {
+    if chars_len(file_path) == 0 { return Err("heal_apply: empty file path"); }
+    if str_index_of(file_path, "..") >= 0 { return Err("heal_apply: path traversal rejected"); }
+    return write_file(fw, file_path, patched_text);
+}
+
+pub fn heal_validate_and_rollback(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap, file_path: String, orig_text: String) -> Result[Void, String] {
+    if str_index_of(file_path, "..") >= 0 { return Err("path traversal rejected"); }
+    let loc: Result[String, String] = compiler_locate(fs, env);
+    if loc.is_err() {
+        let _rb: Result[Void, String] = write_file(fw, file_path, orig_text);
+        let e: String = match loc { Ok(_) => "", Err(m) => m };
+        return Err("heal: compiler locate failed, rolled back: " + e);
+    }
+    let bin: String = match loc { Ok(s) => s, Err(_) => "" };
+    let chk: Result[String, String] = compiler_run_stage(p, bin, "check", file_path);
+    if chk.is_err() {
+        let _rb2: Result[Void, String] = write_file(fw, file_path, orig_text);
+        let e2: String = match chk { Ok(_) => "", Err(m) => m };
+        return Err("heal: compiler check failed, source rolled back: " + e2);
+    }
+    return Ok(());
+}
+
+pub fn heal_format_report(coord: FailureCoordinate, root_cause: String, guard: String, status: String) -> String {
+    let s_coord: String = coordinate_format_source(coord);
+    let val_str: String = if status == "ALREADY_HEALED" { "idempotent (no change)" } else { "oodac check PASSED" };
+    let mut out: String = "=== BLACKBOX SELF-HEAL ===\n";
+    out = out + "Target: " + s_coord + "\n";
+    out = out + "Root Cause: " + root_cause + "\n";
+    out = out + "Guard Applied: " + guard + "\n";
+    out = out + "Validation: " + val_str + "\n";
+    out = out + "Status: " + status + "\n";
+    out = out + "==========================";
+    return out;
+}
+
+pub fn heal_from_autopsy_data(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap, data: AutopsyData) -> Result[String, String] {
+    let coord: FailureCoordinate = coordinate_parse(data.failure_coordinate);
+    if chars_len(coord.file_path) == 0 || coord.file_path == "unknown" { return Err("invalid coordinate: empty file path"); }
+    if str_index_of(coord.file_path, "..") >= 0 { return Err("heal: path traversal rejected"); }
+    if coord.line_num <= 0 { return Err("invalid coordinate: line must be positive"); }
+    if !path_exists(fs, coord.file_path) { return Err("heal: target file not found: " + coord.file_path); }
+    let r_read: Result[String, String] = read_file(fs, coord.file_path);
+    if r_read.is_err() {
+        let e_rd: String = match r_read { Ok(_) => "", Err(m) => m };
+        return Err("heal: unable to read target file: " + e_rd);
+    }
+    let orig_text: String = match r_read { Ok(s) => s, Err(_) => "" };
+    let guard: String = heal_extract_guard(data.remediation, data.root_cause);
+    if chars_len(guard) == 0 { return Err("heal: unable to determine patch guard"); }
+    let r_patch: Result[String, String] = heal_generate_patch(orig_text, coord, guard);
+    if r_patch.is_err() {
+        let e_pt: String = match r_patch { Ok(_) => "", Err(m) => m };
+        return Err(e_pt);
+    }
+    let patched_text: String = match r_patch { Ok(s) => s, Err(_) => "" };
+    if patched_text == orig_text {
+        return Ok(heal_format_report(coord, data.root_cause, guard, "ALREADY_HEALED"));
+    }
+    let r_app: Result[Void, String] = heal_apply(fw, coord.file_path, patched_text);
+    if r_app.is_err() {
+        let e_ap: String = match r_app { Ok(_) => "", Err(m) => m };
+        return Err("heal: apply failed: " + e_ap);
+    }
+    let r_val: Result[Void, String] = heal_validate_and_rollback(p, fs, fw, env, coord.file_path, orig_text);
+    if r_val.is_err() {
+        let e_vl: String = match r_val { Ok(_) => "", Err(m) => m };
+        return Err(e_vl);
+    }
+    return Ok(heal_format_report(coord, data.root_cause, guard, "HEALED"));
+}
+
+pub fn heal_from_autopsy_json(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap, json_text: String) -> Result[String, String] {
+    let r_parse: Result[AutopsyData, String] = autopsy_parse(json_text);
+    if r_parse.is_err() {
+        let e: String = match r_parse { Ok(_) => "", Err(m) => m };
+        return Err("invalid autopsy JSON: " + e);
+    }
+    let data: AutopsyData = match r_parse { Ok(d) => d, Err(_) => return Err("unreachable"); };
+    return heal_from_autopsy_data(p, fs, fw, env, data);
+}

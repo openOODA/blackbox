@@ -1,6 +1,6 @@
 // # Blackbox Surface Verifier CLI
 //
-// Logline: Fails closed if repository invariants, MCP tool schemas, or telemetry codes drift.
+// Logline: Fails closed if repository invariants, MCP tool schemas, telemetry codes, or CLI subcommands drift.
 //
 // Setup: Pure predicate verifier. Enforces ASD-STE100 headers and line count ceiling.
 //

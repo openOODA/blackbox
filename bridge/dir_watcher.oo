@@ -1,63 +1,210 @@
-// # Blackbox Directory Watcher
+// # Blackbox Directory Watcher & Sentinel
 //
-// Logline: Monitors the .blackbox directory for crash autopsy artifacts and flight logs.
+// Logline: Monitors directories for crash autopsy artifacts and flight logs, emitting diagnostic repair recipes.
 //
-// Setup: Requires FsReadCap to inspect the local filesystem for autopsy records.
+// Setup: Requires FsReadCap to inspect the local filesystem for autopsy records and flight telemetry.
 //
 // Beats:
-//   1. Expose standard blackbox directory and autopsy file paths.
-//   2. Check whether an autopsy artifact exists in the target directory.
-//   3. Read autopsy JSON payload safely under FsReadCap.
-//   4. Validate path safety by rejecting directory traversal sequences.
+//   1. Expose standard blackbox directory and autopsy file paths with traversal protection.
+//   2. Resolve target directories into monitored autopsy and flight paths fail-closed.
+//   3. Track filesystem state across polling ticks detecting file creation and modification.
+//   4. Emit formatted crash autopsy diagnostics and 1-turn repair recipes automatically.
+//   5. Provide headless single-pass checks for batch testing and CI integration.
 
-pub fn dir_watcher_default_dir() -> String {
-    return ".blackbox";
-}
+import "autopsy/report_formatter.oo";
+import "record/flight_log.oo";
 
-pub fn dir_watcher_autopsy_file() -> String {
-    return ".blackbox/autopsy.json";
-}
+pub type DirWatchPaths = struct {
+    watch_dir: String,
+    autopsy_path: String,
+    flight_path: String,
+    valid: Bool,
+    err: String
+};
 
-pub fn dir_watcher_flight_file() -> String {
-    return ".blackbox/flight.json";
-}
+pub type DirWatchState = struct {
+    dir: String,
+    last_autopsy_exists: Bool,
+    last_autopsy_size: Int,
+    last_flight_exists: Bool,
+    last_flight_size: Int,
+    event_count: Int
+};
+
+pub type DirWatchTick = struct {
+    state: DirWatchState,
+    event_fired: Bool,
+    event_type: String,
+    report: String
+};
+
+pub fn dir_watcher_default_dir() -> String { return ".blackbox"; }
+pub fn dir_watcher_autopsy_file() -> String { return ".blackbox/autopsy.json"; }
+pub fn dir_watcher_flight_file() -> String { return ".blackbox/flight.json"; }
 
 pub fn dir_watcher_has_autopsy(fs: &FsReadCap, path: String) -> Bool {
     let mut target: String = dir_watcher_autopsy_file();
-    if chars_len(path) > 0 {
-        target = path;
-    }
-    if str_index_of(target, "..") >= 0 {
-        return false;
-    }
+    if chars_len(path) > 0 { target = path; }
+    if str_index_of(target, "..") >= 0 { return false; }
     let res: Result[String, String] = read_file(fs, target);
     return res.is_ok();
 }
 
 pub fn dir_watcher_read_autopsy(fs: &FsReadCap, path: String) -> Result[String, String] {
     let mut target: String = dir_watcher_autopsy_file();
-    if chars_len(path) > 0 {
-        target = path;
-    }
-    if str_index_of(target, "..") >= 0 {
-        return Err("dir_watcher: path traversal rejected");
-    }
-    let res: Result[String, String] = read_file(fs, target);
-    return res;
+    if chars_len(path) > 0 { target = path; }
+    if str_index_of(target, "..") >= 0 { return Err("dir_watcher: path traversal rejected"); }
+    return read_file(fs, target);
 }
 
 pub fn dir_watcher_read_flight(fs: &FsReadCap, path: String) -> Result[String, String] {
     let mut target: String = dir_watcher_flight_file();
-    if chars_len(path) > 0 {
-        target = path;
-    }
-    if str_index_of(target, "..") >= 0 {
-        return Err("dir_watcher: path traversal rejected");
-    }
+    if chars_len(path) > 0 { target = path; }
+    if str_index_of(target, "..") >= 0 { return Err("dir_watcher: path traversal rejected"); }
     let res: Result[String, String] = read_file(fs, target);
     let text: String = match res { Ok(s) => s, Err(_) => return Err("no flight log exists"); };
-    if chars_len(text) == 0 {
-        return Err("no flight log exists");
-    }
+    if chars_len(text) == 0 { return Err("no flight log exists"); }
     return Ok(text);
+}
+
+pub fn dir_watcher_resolve_paths(fs: &FsReadCap, dir: String) -> DirWatchPaths {
+    if str_index_of(dir, "..") >= 0 {
+        return DirWatchPaths { watch_dir: dir, autopsy_path: "", flight_path: "", valid: false, err: "dir_watcher: path traversal rejected" };
+    }
+    if chars_len(dir) == 0 || dir == "." {
+        return DirWatchPaths { watch_dir: ".", autopsy_path: ".blackbox/autopsy.json", flight_path: ".blackbox/flight.json", valid: true, err: "" };
+    }
+    if str_ends_with(dir, ".json") {
+        if !path_exists(fs, dir) {
+            return DirWatchPaths { watch_dir: dir, autopsy_path: "", flight_path: "", valid: false, err: "autopsy file not found: " + dir };
+        }
+        return DirWatchPaths { watch_dir: dir, autopsy_path: dir, flight_path: "", valid: true, err: "" };
+    }
+    if !path_exists(fs, dir) && !oo_fs_is_dir(fs, dir) {
+        return DirWatchPaths { watch_dir: dir, autopsy_path: "", flight_path: "", valid: false, err: "directory not found: " + dir };
+    }
+    let base: String = if str_ends_with(dir, "/") { dir } else { dir + "/" };
+    if path_exists(fs, base + ".blackbox/autopsy.json") {
+        return DirWatchPaths { watch_dir: dir, autopsy_path: base + ".blackbox/autopsy.json", flight_path: base + ".blackbox/flight.json", valid: true, err: "" };
+    }
+    if path_exists(fs, base + "autopsy.json") {
+        return DirWatchPaths { watch_dir: dir, autopsy_path: base + "autopsy.json", flight_path: base + "flight.json", valid: true, err: "" };
+    }
+    if path_exists(fs, base + "autopsy_null.json") {
+        return DirWatchPaths { watch_dir: dir, autopsy_path: base + "autopsy_null.json", flight_path: base + "flight.json", valid: true, err: "" };
+    }
+    if oo_fs_is_dir(fs, base + ".blackbox") {
+        return DirWatchPaths { watch_dir: dir, autopsy_path: base + ".blackbox/autopsy.json", flight_path: base + ".blackbox/flight.json", valid: true, err: "" };
+    }
+    return DirWatchPaths { watch_dir: dir, autopsy_path: base + ".blackbox/autopsy.json", flight_path: base + ".blackbox/flight.json", valid: true, err: "" };
+}
+
+pub fn dir_watcher_state_init(fs: &FsReadCap, dir: String) -> Result[DirWatchState, String] {
+    let paths: DirWatchPaths = dir_watcher_resolve_paths(fs, dir);
+    if !paths.valid { return Err(paths.err); }
+    let a_ex: Bool = if chars_len(paths.autopsy_path) > 0 { path_exists(fs, paths.autopsy_path) } else { false };
+    let a_sz: Int = if a_ex { file_size(fs, paths.autopsy_path) } else { 0 };
+    let f_ex: Bool = if chars_len(paths.flight_path) > 0 { path_exists(fs, paths.flight_path) } else { false };
+    let f_sz: Int = if f_ex { file_size(fs, paths.flight_path) } else { 0 };
+    return Ok(DirWatchState {
+        dir: paths.watch_dir,
+        last_autopsy_exists: a_ex,
+        last_autopsy_size: a_sz,
+        last_flight_exists: f_ex,
+        last_flight_size: f_sz,
+        event_count: 0
+    });
+}
+
+pub fn dir_watcher_poll_tick(fs: &FsReadCap, state: DirWatchState) -> Result[DirWatchTick, String] {
+    let paths: DirWatchPaths = dir_watcher_resolve_paths(fs, state.dir);
+    if !paths.valid { return Err(paths.err); }
+    let cur_a_ex: Bool = if chars_len(paths.autopsy_path) > 0 { path_exists(fs, paths.autopsy_path) } else { false };
+    let cur_a_sz: Int = if cur_a_ex { file_size(fs, paths.autopsy_path) } else { 0 };
+    let cur_f_ex: Bool = if chars_len(paths.flight_path) > 0 { path_exists(fs, paths.flight_path) } else { false };
+    let cur_f_sz: Int = if cur_f_ex { file_size(fs, paths.flight_path) } else { 0 };
+
+    if !state.last_autopsy_exists && cur_a_ex && cur_a_sz > 0 {
+        let rd: Result[String, String] = read_file(fs, paths.autopsy_path);
+        let json: String = match rd { Ok(s) => s, Err(e) => return Err(e) };
+        let rep_res: Result[String, String] = autopsy_format_from_json(json);
+        let rep: String = match rep_res { Ok(s) => s, Err(e) => "WARN autopsy parse error: " + e };
+        let ev_type: String = if rep_res.is_ok() { "AUTOPSY_CREATED" } else { "AUTOPSY_CORRUPT" };
+        let next_st: DirWatchState = DirWatchState {
+            dir: state.dir,
+            last_autopsy_exists: cur_a_ex,
+            last_autopsy_size: cur_a_sz,
+            last_flight_exists: cur_f_ex,
+            last_flight_size: cur_f_sz,
+            event_count: state.event_count + 1
+        };
+        return Ok(DirWatchTick { state: next_st, event_fired: true, event_type: ev_type, report: rep });
+    }
+
+    if state.last_autopsy_exists && cur_a_ex && cur_a_sz != state.last_autopsy_size && cur_a_sz > 0 {
+        let rd2: Result[String, String] = read_file(fs, paths.autopsy_path);
+        let json2: String = match rd2 { Ok(s) => s, Err(e) => return Err(e) };
+        let rep_res2: Result[String, String] = autopsy_format_from_json(json2);
+        let rep2: String = match rep_res2 { Ok(s) => s, Err(e) => "WARN autopsy parse error: " + e };
+        let ev_type2: String = if rep_res2.is_ok() { "AUTOPSY_MODIFIED" } else { "AUTOPSY_CORRUPT" };
+        let next_st2: DirWatchState = DirWatchState {
+            dir: state.dir,
+            last_autopsy_exists: cur_a_ex,
+            last_autopsy_size: cur_a_sz,
+            last_flight_exists: cur_f_ex,
+            last_flight_size: cur_f_sz,
+            event_count: state.event_count + 1
+        };
+        return Ok(DirWatchTick { state: next_st2, event_fired: true, event_type: ev_type2, report: rep2 });
+    }
+
+    if ((!state.last_flight_exists && cur_f_ex) || (state.last_flight_exists && cur_f_ex && cur_f_sz != state.last_flight_size)) && cur_f_sz > 0 {
+        let rd_f: Result[String, String] = read_file(fs, paths.flight_path);
+        let f_json: String = match rd_f { Ok(s) => s, Err(e) => return Err(e) };
+        let f_rep: Result[String, String] = flight_format_from_json(f_json);
+        let f_text: String = match f_rep { Ok(s) => s, Err(e) => "WARN flight parse error: " + e };
+        let f_ev: String = if !state.last_flight_exists { "FLIGHT_CREATED" } else { "FLIGHT_MODIFIED" };
+        let next_st_f: DirWatchState = DirWatchState {
+            dir: state.dir,
+            last_autopsy_exists: cur_a_ex,
+            last_autopsy_size: cur_a_sz,
+            last_flight_exists: cur_f_ex,
+            last_flight_size: cur_f_sz,
+            event_count: state.event_count + 1
+        };
+        return Ok(DirWatchTick { state: next_st_f, event_fired: true, event_type: f_ev, report: f_text });
+    }
+
+    let next_quiet: DirWatchState = DirWatchState {
+        dir: state.dir,
+        last_autopsy_exists: cur_a_ex,
+        last_autopsy_size: cur_a_sz,
+        last_flight_exists: cur_f_ex,
+        last_flight_size: cur_f_sz,
+        event_count: state.event_count
+    };
+    return Ok(DirWatchTick { state: next_quiet, event_fired: false, event_type: "NONE", report: "" });
+}
+
+pub fn dir_watcher_check_once(fs: &FsReadCap, dir: String) -> Result[String, String] {
+    let paths: DirWatchPaths = dir_watcher_resolve_paths(fs, dir);
+    if !paths.valid { return Err(paths.err); }
+    if chars_len(paths.autopsy_path) > 0 && path_exists(fs, paths.autopsy_path) {
+        let sz: Int = file_size(fs, paths.autopsy_path);
+        if sz == 0 { return Err("empty autopsy json"); }
+        let rd: Result[String, String] = read_file(fs, paths.autopsy_path);
+        let json: String = match rd { Ok(s) => s, Err(e) => return Err(e) };
+        return autopsy_format_from_json(json);
+    }
+    if chars_len(paths.flight_path) > 0 && path_exists(fs, paths.flight_path) {
+        let sz_f: Int = file_size(fs, paths.flight_path);
+        if sz_f > 0 {
+            let rd_f: Result[String, String] = read_file(fs, paths.flight_path);
+            if rd_f.is_ok() {
+                let f_json: String = match rd_f { Ok(s) => s, Err(_) => "" };
+                return flight_format_from_json(f_json);
+            }
+        }
+    }
+    return Ok("[blackbox sentinel] No crash events detected (clean).");
 }

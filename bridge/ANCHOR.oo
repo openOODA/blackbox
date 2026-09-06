@@ -6,7 +6,7 @@
 //
 // Beats:
 //   1. Re-export ProcessCap process execution and tracing runner.
-//   2. Re-export filesystem directory watcher for crash artifacts.
+//   2. Re-export filesystem directory watcher and crash sentinel daemon.
 //   3. Re-export MCP tool catalog bindings and invocation dispatch.
 //   4. Re-export standalone MCP stdio server loop.
 

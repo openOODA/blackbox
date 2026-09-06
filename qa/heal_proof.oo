@@ -1,0 +1,218 @@
+// # Self-Healing Engine Verification Proofs
+//
+// Logline: Proves patch guard generation, source modification under FsWriteCap, compiler checks, and rollbacks.
+//
+// Setup: Fails closed on any defect. Exercises null deref healing, idempotency, bounds, and determinism.
+//
+// Beats:
+//   1. Verify null pointer dereference heal on test target file with compiler validation.
+//   2. Verify idempotent re-healing produces identical file without duplicate guards.
+//   3. Verify out-of-bounds line coordinates fail closed without corrupting source.
+//   4. Verify path traversal coordinates fail closed without modifying files.
+//   5. Verify compiler check failure triggers automatic rollback to original text.
+//   6. Verify double-run Run_1 == Run_2 determinism for patch generation and guard extraction.
+//   7. Verify healing from on-disk JSON fixture containing escaped quotes.
+
+import "autopsy/coordinate_locator.oo";
+import "autopsy/root_cause.oo";
+import "autopsy/autopsy_parser.oo";
+import "autopsy/self_heal.oo";
+
+type AutopsyStackFrame = struct {
+    frame_num: Int, address: String, symbol: String, location: String
+};
+
+type AutopsyData = struct {
+    schema_version: String, crash_signal: Int, signal_name: String,
+    fault_address: String, failure_coordinate: String, root_cause: String,
+    description: String, backtrace: List[AutopsyStackFrame],
+    registers_rip: String, registers_rsp: String, registers_rbp: String,
+    cap_trapped: Bool, cap_mask_required: Int, cap_mask_held: Int,
+    granted_caps: List[String], remediation: String
+};
+
+fn heal_test_target_path(fs: &FsReadCap) -> String {
+    if path_exists(fs, "blackbox/qa/diff_sample.oo") {
+        return "blackbox/qa/heal_test_scratch.oo";
+    }
+    return "qa/heal_test_scratch.oo";
+}
+
+fn heal_test_initial_content() -> String {
+    let mut s: String = "// # Scratch Target\n// Logline: Scratch file for self-heal proof.\n";
+    s = s + "// Setup: Target for testing patch insertion.\n// Beats:\n//   1. Function body.\n\n";
+    s = s + "pub fn scratch_target(ptr: Int) -> Result[Int, String] {\n    let x: Int = ptr + 1;\n    return Ok(x);\n}\n";
+    return s;
+}
+
+fn heal_test_make_autopsy(coord: String, cause: String, remed: String) -> AutopsyData {
+    let bt: List[AutopsyStackFrame] = list_new();
+    let caps: List[String] = list_new();
+    return AutopsyData {
+        schema_version: "1.0.0", crash_signal: 11, signal_name: "SIGSEGV",
+        fault_address: "0x0000000000000000", failure_coordinate: coord,
+        root_cause: cause, description: "crash for test", backtrace: bt,
+        registers_rip: "0x55555556a1b0", registers_rsp: "0x7fffffffe210",
+        registers_rbp: "0x7fffffffe240", cap_trapped: false,
+        cap_mask_required: 0, cap_mask_held: 0, granted_caps: caps,
+        remediation: remed
+    };
+}
+
+fn proof_heal_null_deref(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap, target: String) -> Result[Int, String] {
+    let init_text: String = heal_test_initial_content();
+    let _w: Result[Void, String] = write_file(fw, target, init_text);
+    let remed: String = "Add null guard `if ptr == 0 { return Err(\"null pointer dereference\"); }` at " + target + ":8:5";
+    let data: AutopsyData = heal_test_make_autopsy(target + ":8:5:scratch_target", "NULL_POINTER_DEREFERENCE", remed);
+    let r_heal: Result[String, String] = heal_from_autopsy_data(p, fs, fw, env, data);
+    if r_heal.is_err() {
+        let e: String = match r_heal { Ok(_) => "", Err(m) => m };
+        return Err("proof_heal_null_deref: heal failed: " + e);
+    }
+    let rep: String = match r_heal { Ok(s) => s, Err(_) => "" };
+    if str_index_of(rep, "Status: HEALED") < 0 { return Err("proof_heal_null_deref: expected HEALED status"); }
+
+    let rd: Result[String, String] = read_file(fs, target);
+    if rd.is_err() { return Err("proof_heal_null_deref: read healed failed"); }
+    let patched: String = match rd { Ok(s) => s, Err(_) => "" };
+    if str_index_of(patched, "    if ptr == 0 { return Err(\"null pointer dereference\"); }") < 0 {
+        return Err("proof_heal_null_deref: patch guard missing or incorrect indentation");
+    }
+    return Ok(0);
+}
+
+fn proof_heal_idempotent(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap, target: String) -> Result[Int, String] {
+    let rd_before: Result[String, String] = read_file(fs, target);
+    let before: String = match rd_before { Ok(s) => s, Err(_) => "" };
+    let remed: String = "Add null guard `if ptr == 0 { return Err(\"null pointer dereference\"); }` at " + target + ":8:5";
+    let data: AutopsyData = heal_test_make_autopsy(target + ":8:5:scratch_target", "NULL_POINTER_DEREFERENCE", remed);
+    let r_heal: Result[String, String] = heal_from_autopsy_data(p, fs, fw, env, data);
+    if r_heal.is_err() {
+        let e: String = match r_heal { Ok(_) => "", Err(m) => m };
+        return Err("proof_heal_idempotent: second heal failed: " + e);
+    }
+    let rep: String = match r_heal { Ok(s) => s, Err(_) => "" };
+    if str_index_of(rep, "Status: ALREADY_HEALED") < 0 { return Err("proof_heal_idempotent: expected ALREADY_HEALED status"); }
+
+    let rd_after: Result[String, String] = read_file(fs, target);
+    let after: String = match rd_after { Ok(s) => s, Err(_) => "" };
+    if before != after { return Err("proof_heal_idempotent: file modified on idempotent run"); }
+    return Ok(0);
+}
+
+fn proof_heal_oob(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap, target: String) -> Result[Int, String] {
+    let rd_before: Result[String, String] = read_file(fs, target);
+    let before: String = match rd_before { Ok(s) => s, Err(_) => "" };
+    let data_oob: AutopsyData = heal_test_make_autopsy(target + ":9999:1", "NULL_POINTER_DEREFERENCE", "remed");
+    let r1: Result[String, String] = heal_from_autopsy_data(p, fs, fw, env, data_oob);
+    if r1.is_ok() { return Err("proof_heal_oob: line 9999 must fail"); }
+    let msg1: String = match r1 { Ok(_) => "", Err(m) => m };
+    if str_index_of(msg1, "out of bounds") < 0 { return Err("proof_heal_oob: unexpected err: " + msg1); }
+
+    let data_zero: AutopsyData = heal_test_make_autopsy(target + ":0:0", "NULL_POINTER_DEREFERENCE", "remed");
+    let r2: Result[String, String] = heal_from_autopsy_data(p, fs, fw, env, data_zero);
+    if r2.is_ok() { return Err("proof_heal_oob: line 0 must fail"); }
+
+    let rd_after: Result[String, String] = read_file(fs, target);
+    let after: String = match rd_after { Ok(s) => s, Err(_) => "" };
+    if before != after { return Err("proof_heal_oob: source file corrupted by oob attempt"); }
+    return Ok(0);
+}
+
+fn proof_heal_traversal(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap) -> Result[Int, String] {
+    let data_trav: AutopsyData = heal_test_make_autopsy("../secret.oo:10:1", "NULL_POINTER_DEREFERENCE", "remed");
+    let r: Result[String, String] = heal_from_autopsy_data(p, fs, fw, env, data_trav);
+    if r.is_ok() { return Err("proof_heal_traversal: .. must fail"); }
+    let msg: String = match r { Ok(_) => "", Err(m) => m };
+    if str_index_of(msg, "path traversal rejected") < 0 { return Err("proof_heal_traversal: expected path traversal err"); }
+    return Ok(0);
+}
+
+fn proof_heal_rollback(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap, target: String) -> Result[Int, String] {
+    let init_text: String = heal_test_initial_content();
+    let _w: Result[Void, String] = write_file(fw, target, init_text);
+    let bad_remed: String = "Add bad guard `if bad syntax {{{` at line 8";
+    let data: AutopsyData = heal_test_make_autopsy(target + ":8:5", "NULL_POINTER_DEREFERENCE", bad_remed);
+    let r: Result[String, String] = heal_from_autopsy_data(p, fs, fw, env, data);
+    if r.is_ok() { return Err("proof_heal_rollback: bad syntax must fail compiler check"); }
+    let msg: String = match r { Ok(_) => "", Err(m) => m };
+    if str_index_of(msg, "compiler check failed, source rolled back") < 0 {
+        return Err("proof_heal_rollback: unexpected err: " + msg);
+    }
+    let rd: Result[String, String] = read_file(fs, target);
+    let content: String = match rd { Ok(s) => s, Err(_) => "" };
+    if content != init_text { return Err("proof_heal_rollback: file was not restored to original"); }
+    return Ok(0);
+}
+
+fn proof_heal_double_run() -> Result[Int, String] {
+    let coord: FailureCoordinate = coordinate_new("core/test.oo", 4, 1, "foo");
+    let src: String = "fn foo() {\n    let a = 1;\n    return a;\n}\n";
+    let g: String = "if ptr == 0 { return Err(\"null pointer dereference\"); }";
+    let r1: Result[String, String] = heal_generate_patch(src, coord, g);
+    let r2: Result[String, String] = heal_generate_patch(src, coord, g);
+    if r1.is_err() || r2.is_err() { return Err("proof_heal_double_run: patch failed"); }
+    let p1: String = match r1 { Ok(s) => s, Err(_) => "" };
+    let p2: String = match r2 { Ok(s) => s, Err(_) => "" };
+    if p1 != p2 { return Err("proof_heal_double_run: patch Run_1 != Run_2"); }
+
+    let g1: String = heal_extract_guard("Add `if x == 0 { return Err(\"zero\"); }`", "DIVIDE_BY_ZERO");
+    let g2: String = heal_extract_guard("Add `if x == 0 { return Err(\"zero\"); }`", "DIVIDE_BY_ZERO");
+    if g1 != g2 { return Err("proof_heal_double_run: guard Run_1 != Run_2"); }
+    return Ok(0);
+}
+
+fn proof_heal_json_escaped(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap, target: String) -> Result[Int, String] {
+    let init_text: String = heal_test_initial_content();
+    let _w: Result[Void, String] = write_file(fw, target, init_text);
+    let jpath: String = if path_exists(fs, "blackbox/qa/diff_sample.oo") { "blackbox/qa/heal_scratch.json" } else { "qa/heal_scratch.json" };
+    let mut j: String = "{\n  \"schema_version\": \"1.0.0\",\n  \"crash_signal\": 11,\n  \"signal_name\": \"SIGSEGV\",\n";
+    j = j + "  \"failure_coordinate\": \"" + target + ":8:5:scratch_target\",\n  \"root_cause\": \"NULL_POINTER_DEREFERENCE\",\n";
+    j = j + "  \"remediation\": \"Add guard `if ptr == 0 { return Err(\\\"null pointer dereference\\\"); }` at " + target + ":8:5\"\n}";
+    let _wj: Result[Void, String] = write_file(fw, jpath, j);
+    let rd_j: Result[String, String] = read_file(fs, jpath);
+    if rd_j.is_err() { return Err("proof_heal_json_escaped: read fixture failed"); }
+    let raw: String = match rd_j { Ok(s) => s, Err(_) => "" };
+    let r_heal: Result[String, String] = heal_from_autopsy_json(p, fs, fw, env, raw);
+    let _rm: Result[Void, String] = oo_fs_remove_file(fw, jpath);
+    if r_heal.is_err() {
+        let e: String = match r_heal { Ok(_) => "", Err(m) => m };
+        return Err("proof_heal_json_escaped: heal failed: " + e);
+    }
+    let rep: String = match r_heal { Ok(s) => s, Err(_) => "" };
+    if str_index_of(rep, "Status: HEALED") < 0 { return Err("proof_heal_json_escaped: expected HEALED"); }
+    let rd: Result[String, String] = read_file(fs, target);
+    if rd.is_err() { return Err("proof_heal_json_escaped: read target failed"); }
+    let patched: String = match rd { Ok(s) => s, Err(_) => "" };
+    if str_index_of(patched, "    if ptr == 0 { return Err(\"null pointer dereference\"); }") < 0 {
+        return Err("proof_heal_json_escaped: guard missing or unescape failed");
+    }
+    return Ok(0);
+}
+
+pub fn heal_proof_run(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap) -> Result[Int, String] {
+    let target: String = heal_test_target_path(fs);
+    let r1: Result[Int, String] = proof_heal_null_deref(p, fs, fw, env, target);
+    if r1.is_err() { return r1; }
+
+    let r2: Result[Int, String] = proof_heal_idempotent(p, fs, fw, env, target);
+    if r2.is_err() { return r2; }
+
+    let r3: Result[Int, String] = proof_heal_oob(p, fs, fw, env, target);
+    if r3.is_err() { return r3; }
+
+    let r4: Result[Int, String] = proof_heal_traversal(p, fs, fw, env);
+    if r4.is_err() { return r4; }
+
+    let r5: Result[Int, String] = proof_heal_rollback(p, fs, fw, env, target);
+    if r5.is_err() { return r5; }
+
+    let r6: Result[Int, String] = proof_heal_double_run();
+    if r6.is_err() { return r6; }
+
+    let r7: Result[Int, String] = proof_heal_json_escaped(p, fs, fw, env, target);
+    if r7.is_err() { return r7; }
+
+    let _clean: Result[Void, String] = oo_fs_remove_file(fw, target);
+    return Ok(0);
+}

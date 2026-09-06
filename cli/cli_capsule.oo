@@ -1,0 +1,81 @@
+// # Blackbox CLI Capsule Subcommands
+//
+// Logline: Dispatches pack and replay commands with robust parameter defaults and fail-closed validation.
+//
+// Setup: FsReadCap and FsWriteCap. Rejects path traversal and checksum mismatches.
+//
+// Beats:
+//   1. Implement cli_err helper for formatted error output.
+//   2. Dispatch blackbox pack bundling flight log and autopsy into .bb artifact.
+//   3. Dispatch blackbox replay reading .bb capsule and emitting reconstructed diagnostics.
+
+import "record/flight_capsule.oo";
+
+fn cli_capsule_err(msg: String) -> Result[Int, String] {
+    let line: String = "ERR " + msg;
+    println(line);
+    return Err(msg);
+}
+
+pub fn cli_run_pack(fs: &FsReadCap, fw: &FsWriteCap, args: List[String]) -> Result[Int, String] {
+    let n: Int = list_len(args);
+    let mut offset: Int = 0;
+    if n > 0 {
+        if list_get(args, 0) == "pack" {
+            offset = 1;
+        }
+    }
+    let rem: Int = n - offset;
+    let mut out_path: String = "flight_capsule.bb";
+    let mut autopsy_path: String = ".blackbox/autopsy.json";
+    let mut flight_path: String = ".blackbox/flight.json";
+
+    if rem > 0 {
+        let a1: String = list_get(args, offset);
+        if chars_len(a1) > 0 { out_path = a1; }
+    }
+    if rem > 1 {
+        let a2: String = list_get(args, offset + 1);
+        if chars_len(a2) > 0 { autopsy_path = a2; }
+    }
+    if rem > 2 {
+        let a3: String = list_get(args, offset + 2);
+        if chars_len(a3) > 0 { flight_path = a3; }
+    }
+
+    let r_pack: Result[String, String] = capsule_pack(fs, fw, flight_path, autopsy_path, out_path);
+    if r_pack.is_err() {
+        let e: String = match r_pack { Ok(_) => "", Err(m) => m };
+        return cli_capsule_err(e);
+    }
+    let dest: String = match r_pack { Ok(s) => s, Err(_) => "" };
+    println("PACKED flight capsule: " + dest);
+    return Ok(0);
+}
+
+pub fn cli_run_replay(fs: &FsReadCap, args: List[String]) -> Result[Int, String] {
+    let n: Int = list_len(args);
+    let mut offset: Int = 0;
+    if n > 0 {
+        if list_get(args, 0) == "replay" {
+            offset = 1;
+        }
+    }
+    let rem: Int = n - offset;
+    if rem <= 0 {
+        return cli_capsule_err("missing capsule file argument for replay");
+    }
+    let capsule_path: String = list_get(args, offset);
+    if chars_len(capsule_path) == 0 {
+        return cli_capsule_err("missing capsule file argument for replay");
+    }
+
+    let r_rep: Result[String, String] = capsule_replay(fs, capsule_path);
+    if r_rep.is_err() {
+        let e: String = match r_rep { Ok(_) => "", Err(m) => m };
+        return cli_capsule_err(e);
+    }
+    let report: String = match r_rep { Ok(s) => s, Err(_) => "" };
+    println(report);
+    return Ok(0);
+}

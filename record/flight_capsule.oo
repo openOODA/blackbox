@@ -1,0 +1,251 @@
+// # Portable Flight Capsule Artifact Engine
+//
+// Logline: Packs telemetry, autopsy, and registers into .bb capsules and replays them deterministically.
+//
+// Setup: FsReadCap and FsWriteCap. CRC-32 checksum integrity verification fail-closed.
+//
+// Beats:
+//   1. Implement pure .oo IEEE 802.3 CRC-32 checksum algorithm.
+//   2. Define CapsuleData struct with serialization and deserialization.
+//   3. Pack flight and autopsy logs into .bb container under capability security.
+//   4. Unpack, verify checksum integrity fail-closed, and format replay report.
+
+import "flight_log.oo";
+import "autopsy/autopsy_json.oo";
+import "autopsy/autopsy_parser.oo";
+import "autopsy/report_formatter.oo";
+
+type AutopsyStackFrame = struct {
+    frame_num: Int, address: String, symbol: String, location: String
+};
+
+type AutopsyData = struct {
+    schema_version: String, crash_signal: Int, signal_name: String,
+    fault_address: String, failure_coordinate: String, root_cause: String,
+    description: String, backtrace: List[AutopsyStackFrame],
+    registers_rip: String, registers_rsp: String, registers_rbp: String,
+    cap_trapped: Bool, cap_mask_required: Int, cap_mask_held: Int,
+    granted_caps: List[String], remediation: String
+};
+
+type CapsuleData = struct {
+    flight_json: String,
+    autopsy_json: String,
+    registers_rip: String,
+    registers_rsp: String,
+    registers_rbp: String,
+    caps_mask: Int,
+    crc32: Int
+};
+
+pub fn capsule_crc32(payload: String) -> Int {
+    let n: Int = bytes_len(payload);
+    let mut crc: Int = 4294967295;
+    let mut i: Int = 0;
+    while i < n {
+        let b: Int = byte_at(payload, i);
+        crc = crc ^ b;
+        let mut j: Int = 0;
+        while j < 8 {
+            let bit: Int = crc & 1;
+            crc = (crc >> 1) & 2147483647;
+            if bit != 0 {
+                crc = crc ^ 3988292384;
+            }
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    return (crc ^ 4294967295) & 4294967295;
+}
+
+pub fn capsule_build_payload(data: CapsuleData) -> String {
+    let mut p: String = "{\n";
+    p = p + "    \"registers_rip\": \"" + data.registers_rip + "\",\n";
+    p = p + "    \"registers_rsp\": \"" + data.registers_rsp + "\",\n";
+    p = p + "    \"registers_rbp\": \"" + data.registers_rbp + "\",\n";
+    p = p + "    \"caps_mask\": " + data.caps_mask.to_string() + ",\n";
+    p = p + "    \"autopsy\": " + data.autopsy_json + ",\n";
+    p = p + "    \"flight\": " + data.flight_json + "\n";
+    p = p + "  }";
+    return p;
+}
+
+pub fn capsule_serialize(data: CapsuleData) -> String {
+    let payload_str: String = capsule_build_payload(data);
+    let crc: Int = if data.crc32 != 0 { data.crc32 } else { capsule_crc32(payload_str) };
+    let mut out: String = "{\n";
+    out = out + "  \"magic\": \"OPENOODA_BB\",\n";
+    out = out + "  \"version\": \"1.0.0\",\n";
+    out = out + "  \"crc32\": " + crc.to_string() + ",\n";
+    out = out + "  \"payload\": " + payload_str + "\n";
+    out = out + "}\n";
+    return out;
+}
+
+pub fn capsule_deserialize(raw: String) -> Result[CapsuleData, String] {
+    if chars_len(raw) == 0 { return Err("capsule_deserialize: empty raw string"); }
+    let magic: String = autopsy_json_str(raw, "magic");
+    if magic != "OPENOODA_BB" {
+        return Err("capsule_deserialize: invalid magic header");
+    }
+    let p_pos: Int = json_find_key(raw, "payload");
+    if p_pos < 0 { return Err("capsule_deserialize: missing payload"); }
+    let payload_str: String = json_take_val(raw, p_pos);
+    if chars_len(payload_str) == 0 { return Err("capsule_deserialize: empty or truncated payload"); }
+
+    let stored_crc: Int = autopsy_json_int(raw, "crc32");
+    let actual_crc: Int = capsule_crc32(payload_str);
+    if actual_crc != stored_crc {
+        return Err("capsule integrity verification failed: checksum mismatch (expected " + stored_crc.to_string() + ", computed " + actual_crc.to_string() + ")");
+    }
+
+    let rip: String = autopsy_json_str(payload_str, "registers_rip");
+    let rsp: String = autopsy_json_str(payload_str, "registers_rsp");
+    let rbp: String = autopsy_json_str(payload_str, "registers_rbp");
+    let caps_mask: Int = autopsy_json_int(payload_str, "caps_mask");
+
+    let a_pos: Int = json_find_key(payload_str, "autopsy");
+    if a_pos < 0 { return Err("capsule_deserialize: missing autopsy section"); }
+    let autopsy_str: String = json_take_val(payload_str, a_pos);
+    if chars_len(autopsy_str) == 0 { return Err("capsule_deserialize: empty autopsy section"); }
+
+    let f_pos: Int = json_find_key(payload_str, "flight");
+    if f_pos < 0 { return Err("capsule_deserialize: missing flight section"); }
+    let flight_str: String = json_take_val(payload_str, f_pos);
+    if chars_len(flight_str) == 0 { return Err("capsule_deserialize: empty flight section"); }
+
+    return Ok(CapsuleData {
+        flight_json: flight_str,
+        autopsy_json: autopsy_str,
+        registers_rip: rip,
+        registers_rsp: rsp,
+        registers_rbp: rbp,
+        caps_mask: caps_mask,
+        crc32: stored_crc
+    });
+}
+
+pub fn capsule_pack(fs: &FsReadCap, fw: &FsWriteCap, flight_path: String, autopsy_path: String, out_path: String) -> Result[String, String] {
+    let target_out: String = if chars_len(out_path) > 0 { out_path } else { "flight_capsule.bb" };
+    let target_autopsy: String = if chars_len(autopsy_path) > 0 { autopsy_path } else { ".blackbox/autopsy.json" };
+    let target_flight: String = if chars_len(flight_path) > 0 { flight_path } else { ".blackbox/flight.json" };
+
+    if str_index_of(target_out, "..") >= 0 { return Err("capsule_pack: path traversal rejected in output path"); }
+    if str_index_of(target_autopsy, "..") >= 0 { return Err("capsule_pack: path traversal rejected in autopsy path"); }
+    if str_index_of(target_flight, "..") >= 0 { return Err("capsule_pack: path traversal rejected in flight path"); }
+
+    if !path_exists(fs, target_autopsy) {
+        return Err("capsule_pack: autopsy file not found: " + target_autopsy);
+    }
+    let r_auto: Result[String, String] = read_file(fs, target_autopsy);
+    if r_auto.is_err() {
+        let e_a: String = match r_auto { Ok(_) => "", Err(m) => m };
+        return Err("capsule_pack: read autopsy failed: " + e_a);
+    }
+    let auto_raw: String = match r_auto { Ok(s) => s, Err(_) => "" };
+
+    let mut flight_raw: String = "{\"schema_version\":\"1.0.0\",\"capacity\":0,\"total_events\":0,\"events\":[]}";
+    if path_exists(fs, target_flight) {
+        let r_fl: Result[String, String] = read_file(fs, target_flight);
+        if r_fl.is_err() {
+            let e_f: String = match r_fl { Ok(_) => "", Err(m) => m };
+            return Err("capsule_pack: read flight failed: " + e_f);
+        }
+        flight_raw = match r_fl { Ok(s) => s, Err(_) => "" };
+    } else if chars_len(flight_path) > 0 {
+        return Err("capsule_pack: flight file not found: " + target_flight);
+    }
+
+    let parsed_auto: Result[AutopsyData, String] = autopsy_parse(auto_raw);
+    let mut rip: String = autopsy_json_str(auto_raw, "rip");
+    if chars_len(rip) == 0 { rip = autopsy_json_str(auto_raw, "registers_rip"); }
+    let mut rsp: String = autopsy_json_str(auto_raw, "rsp");
+    if chars_len(rsp) == 0 { rsp = autopsy_json_str(auto_raw, "registers_rsp"); }
+    let mut rbp: String = autopsy_json_str(auto_raw, "rbp");
+    if chars_len(rbp) == 0 { rbp = autopsy_json_str(auto_raw, "registers_rbp"); }
+    let mut caps_mask: Int = autopsy_json_int(auto_raw, "cap_mask_held");
+    if caps_mask == 0 { caps_mask = autopsy_json_int(auto_raw, "caps_mask"); }
+    if parsed_auto.is_ok() {
+        let ad: AutopsyData = match parsed_auto { Ok(d) => d, Err(_) => return Err("unreachable") };
+        if chars_len(rip) == 0 { rip = ad.registers_rip; }
+        if chars_len(rsp) == 0 { rsp = ad.registers_rsp; }
+        if chars_len(rbp) == 0 { rbp = ad.registers_rbp; }
+        if caps_mask == 0 { caps_mask = ad.cap_mask_held; }
+    }
+
+    let mut cdata: CapsuleData = CapsuleData {
+        flight_json: flight_raw,
+        autopsy_json: auto_raw,
+        registers_rip: rip,
+        registers_rsp: rsp,
+        registers_rbp: rbp,
+        caps_mask: caps_mask,
+        crc32: 0
+    };
+    let payload: String = capsule_build_payload(cdata);
+    cdata.crc32 = capsule_crc32(payload);
+    let sealed: String = capsule_serialize(cdata);
+
+    let wr: Result[Void, String] = write_file(fw, target_out, sealed);
+    if wr.is_err() {
+        let e_w: String = match wr { Ok(_) => "", Err(m) => m };
+        return Err("capsule_pack: write capsule failed: " + e_w);
+    }
+    return Ok(target_out);
+}
+
+pub fn capsule_unpack(fs: &FsReadCap, capsule_path: String) -> Result[CapsuleData, String] {
+    if str_index_of(capsule_path, "..") >= 0 {
+        return Err("capsule_unpack: path traversal rejected");
+    }
+    if !path_exists(fs, capsule_path) {
+        return Err("capsule_unpack: capsule file not found: " + capsule_path);
+    }
+    let rd: Result[String, String] = read_file(fs, capsule_path);
+    if rd.is_err() {
+        let e: String = match rd { Ok(_) => "", Err(m) => m };
+        return Err("capsule_unpack: read failed: " + e);
+    }
+    let raw: String = match rd { Ok(s) => s, Err(_) => "" };
+    return capsule_deserialize(raw);
+}
+
+pub fn capsule_replay_report(data: CapsuleData) -> String {
+    let mut out: String = "=== BLACKBOX CAPSULE REPLAY ===\n";
+    out = out + "Registers:\n";
+    out = out + "  RIP: " + data.registers_rip + "  RSP: " + data.registers_rsp + "  RBP: " + data.registers_rbp + "\n";
+    out = out + "Capabilities Held Mask: " + data.caps_mask.to_string() + "\n\n";
+
+    let r_auto: Result[AutopsyData, String] = autopsy_parse(data.autopsy_json);
+    let auto_text: String = if r_auto.is_ok() {
+        let ad: AutopsyData = match r_auto { Ok(d) => d, Err(_) => return out };
+        autopsy_format_report(ad)
+    } else {
+        "=== BLACKBOX CRASH AUTOPSY ===\n" + data.autopsy_json
+    };
+    out = out + auto_text;
+    out = out + "\n\n";
+
+    out = out + "Flight Trace:\n";
+    let r_stream: Result[String, String] = flight_format_from_json(data.flight_json);
+    let mut stream_text: String = "  (no telemetry events recorded)";
+    if r_stream.is_ok() {
+        let st: String = match r_stream { Ok(s) => s, Err(_) => "" };
+        if chars_len(st) > 0 {
+            stream_text = st;
+        }
+    }
+    out = out + stream_text;
+    return out;
+}
+
+pub fn capsule_replay(fs: &FsReadCap, capsule_path: String) -> Result[String, String] {
+    let r_data: Result[CapsuleData, String] = capsule_unpack(fs, capsule_path);
+    if r_data.is_err() {
+        let e: String = match r_data { Ok(_) => "", Err(m) => m };
+        return Err(e);
+    }
+    let data: CapsuleData = match r_data { Ok(d) => d, Err(_) => return Err("unreachable") };
+    return Ok(capsule_replay_report(data));
+}
