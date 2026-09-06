@@ -1,25 +1,25 @@
 // # Portable Flight Capsule Artifact Engine
 //
-// Logline: Packs telemetry, autopsy, and registers into .bb capsules and replays them deterministically.
+// Logline: Packs telemetry, autopsy, and registers into .bb capsules and unmarshals them deterministically.
 //
-// Setup: FsReadCap and FsWriteCap. CRC-32 checksum integrity verification fail-closed.
+// Setup: FsReadCap and FsWriteCap. Crypto-agile integrity verification (CRC32, SHA-256, Ed25519) fail-closed.
 //
 // Beats:
-//   1. Implement pure .oo IEEE 802.3 CRC-32 checksum algorithm.
-//   2. Define CapsuleData struct with serialization and deserialization.
+//   1. Define CapsuleData struct with self-describing crypto-agile fields.
+//   2. Serialize and deserialize capsule payloads with tamper verification.
 //   3. Pack flight and autopsy logs into .bb container under capability security.
-//   4. Unpack, verify checksum integrity fail-closed, and format replay report.
+//   4. Unpack and verify cryptographic integrity fail-closed.
 
 import "flight_log.oo";
 import "autopsy/autopsy_json.oo";
 import "autopsy/autopsy_parser.oo";
-import "autopsy/report_formatter.oo";
+import "record/crypto_agile.oo";
 
-type AutopsyStackFrame = struct {
+pub type AutopsyStackFrame = struct {
     frame_num: Int, address: String, symbol: String, location: String
 };
 
-type AutopsyData = struct {
+pub type AutopsyData = struct {
     schema_version: String, crash_signal: Int, signal_name: String,
     fault_address: String, failure_coordinate: String, root_cause: String,
     description: String, backtrace: List[AutopsyStackFrame],
@@ -28,36 +28,18 @@ type AutopsyData = struct {
     granted_caps: List[String], remediation: String
 };
 
-type CapsuleData = struct {
+pub type CapsuleData = struct {
     flight_json: String,
     autopsy_json: String,
     registers_rip: String,
     registers_rsp: String,
     registers_rbp: String,
     caps_mask: Int,
-    crc32: Int
+    crc32: Int,
+    algo: String,
+    digest: String,
+    signer: String
 };
-
-pub fn capsule_crc32(payload: String) -> Int {
-    let n: Int = bytes_len(payload);
-    let mut crc: Int = 4294967295;
-    let mut i: Int = 0;
-    while i < n {
-        let b: Int = byte_at(payload, i);
-        crc = crc ^ b;
-        let mut j: Int = 0;
-        while j < 8 {
-            let bit: Int = crc & 1;
-            crc = (crc >> 1) & 2147483647;
-            if bit != 0 {
-                crc = crc ^ 3988292384;
-            }
-            j = j + 1;
-        }
-        i = i + 1;
-    }
-    return (crc ^ 4294967295) & 4294967295;
-}
 
 pub fn capsule_build_payload(data: CapsuleData) -> String {
     let mut p: String = "{\n";
@@ -73,10 +55,16 @@ pub fn capsule_build_payload(data: CapsuleData) -> String {
 
 pub fn capsule_serialize(data: CapsuleData) -> String {
     let payload_str: String = capsule_build_payload(data);
+    let algo: String = if chars_len(data.algo) > 0 { data.algo } else { "sha256" };
     let crc: Int = if data.crc32 != 0 { data.crc32 } else { capsule_crc32(payload_str) };
     let mut out: String = "{\n";
     out = out + "  \"magic\": \"OPENOODA_BB\",\n";
-    out = out + "  \"version\": \"1.0.0\",\n";
+    out = out + "  \"version\": \"1.1.0\",\n";
+    out = out + "  \"algo\": \"" + algo + "\",\n";
+    out = out + "  \"digest\": \"" + data.digest + "\",\n";
+    if chars_len(data.signer) > 0 {
+        out = out + "  \"signer\": \"" + data.signer + "\",\n";
+    }
     out = out + "  \"crc32\": " + crc.to_string() + ",\n";
     out = out + "  \"payload\": " + payload_str + "\n";
     out = out + "}\n";
@@ -94,10 +82,17 @@ pub fn capsule_deserialize(raw: String) -> Result[CapsuleData, String] {
     let payload_str: String = json_take_val(raw, p_pos);
     if chars_len(payload_str) == 0 { return Err("capsule_deserialize: empty or truncated payload"); }
 
+    let mut algo: String = autopsy_json_str(raw, "algo");
+    if chars_len(algo) == 0 { algo = "crc32"; }
+    let mut digest: String = autopsy_json_str(raw, "digest");
+    let signer: String = autopsy_json_str(raw, "signer");
     let stored_crc: Int = autopsy_json_int(raw, "crc32");
-    let actual_crc: Int = capsule_crc32(payload_str);
-    if actual_crc != stored_crc {
-        return Err("capsule integrity verification failed: checksum mismatch (expected " + stored_crc.to_string() + ", computed " + actual_crc.to_string() + ")");
+    if chars_len(digest) == 0 { digest = stored_crc.to_string(); }
+
+    let v_res: Result[Bool, String] = crypto_agile_verify(algo, payload_str, digest, signer);
+    if v_res.is_err() {
+        let e_v: String = match v_res { Ok(_) => "", Err(m) => m };
+        return Err("capsule integrity verification failed: " + e_v);
     }
 
     let rip: String = autopsy_json_str(payload_str, "registers_rip");
@@ -122,11 +117,14 @@ pub fn capsule_deserialize(raw: String) -> Result[CapsuleData, String] {
         registers_rsp: rsp,
         registers_rbp: rbp,
         caps_mask: caps_mask,
-        crc32: stored_crc
+        crc32: stored_crc,
+        algo: algo,
+        digest: digest,
+        signer: signer
     });
 }
 
-pub fn capsule_pack(fs: &FsReadCap, fw: &FsWriteCap, flight_path: String, autopsy_path: String, out_path: String) -> Result[String, String] {
+pub fn capsule_pack_signed(fs: &FsReadCap, fw: &FsWriteCap, flight_path: String, autopsy_path: String, out_path: String, algo: String, seed_hex: String) -> Result[String, String] {
     let target_out: String = if chars_len(out_path) > 0 { out_path } else { "flight_capsule.bb" };
     let target_autopsy: String = if chars_len(autopsy_path) > 0 { autopsy_path } else { ".blackbox/autopsy.json" };
     let target_flight: String = if chars_len(flight_path) > 0 { flight_path } else { ".blackbox/flight.json" };
@@ -181,10 +179,20 @@ pub fn capsule_pack(fs: &FsReadCap, fw: &FsWriteCap, flight_path: String, autops
         registers_rsp: rsp,
         registers_rbp: rbp,
         caps_mask: caps_mask,
-        crc32: 0
+        crc32: 0,
+        algo: crypto_agile_normalize_algo(algo),
+        digest: "",
+        signer: crypto_agile_signer(algo, seed_hex)
     };
     let payload: String = capsule_build_payload(cdata);
     cdata.crc32 = capsule_crc32(payload);
+    let r_dig: Result[String, String] = crypto_agile_digest(cdata.algo, payload, seed_hex);
+    if r_dig.is_err() {
+        let e_d: String = match r_dig { Ok(_) => "", Err(m) => m };
+        return Err("capsule_pack: digest failed: " + e_d);
+    }
+    let dig_val: String = match r_dig { Ok(s) => s, Err(_) => "" };
+    cdata.digest = dig_val;
     let sealed: String = capsule_serialize(cdata);
 
     let wr: Result[Void, String] = write_file(fw, target_out, sealed);
@@ -193,6 +201,10 @@ pub fn capsule_pack(fs: &FsReadCap, fw: &FsWriteCap, flight_path: String, autops
         return Err("capsule_pack: write capsule failed: " + e_w);
     }
     return Ok(target_out);
+}
+
+pub fn capsule_pack(fs: &FsReadCap, fw: &FsWriteCap, flight_path: String, autopsy_path: String, out_path: String) -> Result[String, String] {
+    return capsule_pack_signed(fs, fw, flight_path, autopsy_path, out_path, "crc32", "");
 }
 
 pub fn capsule_unpack(fs: &FsReadCap, capsule_path: String) -> Result[CapsuleData, String] {
@@ -209,43 +221,4 @@ pub fn capsule_unpack(fs: &FsReadCap, capsule_path: String) -> Result[CapsuleDat
     }
     let raw: String = match rd { Ok(s) => s, Err(_) => "" };
     return capsule_deserialize(raw);
-}
-
-pub fn capsule_replay_report(data: CapsuleData) -> String {
-    let mut out: String = "=== BLACKBOX CAPSULE REPLAY ===\n";
-    out = out + "Registers:\n";
-    out = out + "  RIP: " + data.registers_rip + "  RSP: " + data.registers_rsp + "  RBP: " + data.registers_rbp + "\n";
-    out = out + "Capabilities Held Mask: " + data.caps_mask.to_string() + "\n\n";
-
-    let r_auto: Result[AutopsyData, String] = autopsy_parse(data.autopsy_json);
-    let auto_text: String = if r_auto.is_ok() {
-        let ad: AutopsyData = match r_auto { Ok(d) => d, Err(_) => return out };
-        autopsy_format_report(ad)
-    } else {
-        "=== BLACKBOX CRASH AUTOPSY ===\n" + data.autopsy_json
-    };
-    out = out + auto_text;
-    out = out + "\n\n";
-
-    out = out + "Flight Trace:\n";
-    let r_stream: Result[String, String] = flight_format_from_json(data.flight_json);
-    let mut stream_text: String = "  (no telemetry events recorded)";
-    if r_stream.is_ok() {
-        let st: String = match r_stream { Ok(s) => s, Err(_) => "" };
-        if chars_len(st) > 0 {
-            stream_text = st;
-        }
-    }
-    out = out + stream_text;
-    return out;
-}
-
-pub fn capsule_replay(fs: &FsReadCap, capsule_path: String) -> Result[String, String] {
-    let r_data: Result[CapsuleData, String] = capsule_unpack(fs, capsule_path);
-    if r_data.is_err() {
-        let e: String = match r_data { Ok(_) => "", Err(m) => m };
-        return Err(e);
-    }
-    let data: CapsuleData = match r_data { Ok(d) => d, Err(_) => return Err("unreachable") };
-    return Ok(capsule_replay_report(data));
 }

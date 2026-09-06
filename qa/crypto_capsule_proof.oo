@@ -1,0 +1,128 @@
+// # Crypto Agile Capsule Proof Suite
+//
+// Logline: Validates self-describing crypto-agile flight capsules across CRC32, SHA-256, and Ed25519.
+//
+// Setup: FsReadCap and FsWriteCap. Proves signing, verification, tampering fail-closed, and double-run determinism.
+//
+// Beats:
+//   1. Assert CRC32, SHA-256, and Ed25519 roundtrip pack, unpack, and verify.
+//   2. Assert tampered payload is detected and rejected fail-closed for all algorithms.
+//   3. Assert replay --verify reports successful cryptographic validation.
+//   4. Assert double-run determinism: Run_1 == Run_2.
+
+import "record/flight_capsule.oo";
+import "record/flight_replay.oo";
+import "record/crypto_agile.oo";
+import "cli/cli_capsule.oo";
+
+fn crypto_test_autopsy() -> String {
+    let mut j: String = "{\n  \"schema_version\": \"1.0.0\",\n  \"crash_signal\": 11,\n  \"signal_name\": \"SIGSEGV\",\n";
+    j = j + "  \"fault_address\": \"0x0\",\n  \"failure_coordinate\": \"core/agent.oo:88:4:dispatch\",\n";
+    j = j + "  \"root_cause\": \"NULL_POINTER_DEREFERENCE\",\n  \"description\": \"crypto probe null fault\",\n";
+    j = j + "  \"rip\": \"0x55555556d300\",\n  \"rsp\": \"0x7fffffffe180\",\n  \"rbp\": \"0x7fffffffe1b0\",\n";
+    j = j + "  \"cap_trapped\": false,\n  \"cap_mask_held\": 7,\n  \"remediation\": \"Check null\"\n}";
+    return j;
+}
+
+fn crypto_test_flight() -> String {
+    return "{\"schema_version\":\"1.0.0\",\"capacity\":1,\"total_events\":1,\"events\":[{\"seq\":0,\"phase\":1,\"type\":2,\"detail\":\"probe\",\"timestamp\":1000}]}";
+}
+
+fn proof_crypto_roundtrip(fs: &FsReadCap, fw: &FsWriteCap, algo: String, out_bb: String) -> Result[Int, String] {
+    let a_path: String = "blackbox/qa/tmp_crypto_auto.json";
+    let f_path: String = "blackbox/qa/tmp_crypto_flight.json";
+    let w1: Result[Void, String] = write_file(fw, a_path, crypto_test_autopsy());
+    if w1.is_err() { return Err("write autopsy failed"); }
+    let w2: Result[Void, String] = write_file(fw, f_path, crypto_test_flight());
+    if w2.is_err() { return Err("write flight failed"); }
+
+    let p_res: Result[String, String] = capsule_pack_signed(fs, fw, f_path, a_path, out_bb, algo, "");
+    if p_res.is_err() {
+        let e: String = match p_res { Ok(_) => "", Err(m) => m };
+        return Err("pack failed for " + algo + ": " + e);
+    }
+
+    let u_res: Result[CapsuleData, String] = capsule_unpack(fs, out_bb);
+    if u_res.is_err() {
+        let e2: String = match u_res { Ok(_) => "", Err(m) => m };
+        return Err("unpack failed for " + algo + ": " + e2);
+    }
+    let data: CapsuleData = match u_res { Ok(d) => d, Err(_) => return Err("unreachable") };
+    let norm_algo: String = crypto_agile_normalize_algo(algo);
+    if data.algo != norm_algo {
+        return Err("algo mismatch: expected " + norm_algo + ", got " + data.algo);
+    }
+    if chars_len(data.digest) == 0 {
+        return Err("digest missing for algo " + algo);
+    }
+
+    let rep_res: Result[String, String] = capsule_replay_verified(fs, out_bb, true);
+    if rep_res.is_err() {
+        let e3: String = match rep_res { Ok(_) => "", Err(m) => m };
+        return Err("replay --verify failed for " + algo + ": " + e3);
+    }
+
+    return Ok(0);
+}
+
+fn proof_crypto_tamper(fs: &FsReadCap, fw: &FsWriteCap, bb_path: String) -> Result[Int, String] {
+    let rd: Result[String, String] = read_file(fs, bb_path);
+    if rd.is_err() { return Err("read for tamper failed"); }
+    let orig: String = match rd { Ok(s) => s, Err(_) => "" };
+    let target_str: String = "0x55555556d300";
+    let idx: Int = str_index_of(orig, target_str);
+    if idx < 0 { return Err("target string for tamper not found"); }
+    let tampered: String = str_slice(orig, 0, idx) + "0x55555556d301" + str_slice(orig, idx + 14, chars_len(orig));
+    let w_t: Result[Void, String] = write_file(fw, bb_path + ".tampered", tampered);
+    if w_t.is_err() { return Err("write tampered failed"); }
+
+    let r_bad: Result[CapsuleData, String] = capsule_unpack(fs, bb_path + ".tampered");
+    if r_bad.is_ok() {
+        return Err("FAIL tamper proof: modified capsule passed verification unexpectedly");
+    }
+    return Ok(0);
+}
+
+pub fn crypto_capsule_proof_run(fs: &FsReadCap, fw: &FsWriteCap) -> Result[Int, String] {
+    let r_crc: Result[Int, String] = proof_crypto_roundtrip(fs, fw, "crc32", "blackbox/qa/tmp_test_crc.bb");
+    if r_crc.is_err() { return r_crc; }
+
+    let r_sha: Result[Int, String] = proof_crypto_roundtrip(fs, fw, "sha256", "blackbox/qa/tmp_test_sha.bb");
+    if r_sha.is_err() { return r_sha; }
+
+    let r_ed: Result[Int, String] = proof_crypto_roundtrip(fs, fw, "ed25519", "blackbox/qa/tmp_test_ed.bb");
+    if r_ed.is_err() { return r_ed; }
+
+    let t_crc: Result[Int, String] = proof_crypto_tamper(fs, fw, "blackbox/qa/tmp_test_crc.bb");
+    if t_crc.is_err() { return t_crc; }
+
+    let t_sha: Result[Int, String] = proof_crypto_tamper(fs, fw, "blackbox/qa/tmp_test_sha.bb");
+    if t_sha.is_err() { return t_sha; }
+
+    let t_ed: Result[Int, String] = proof_crypto_tamper(fs, fw, "blackbox/qa/tmp_test_ed.bb");
+    if t_ed.is_err() { return t_ed; }
+
+    // Double-run determinism proof: Run_1 == Run_2
+    let d1: Result[String, String] = capsule_pack_signed(fs, fw, "blackbox/qa/tmp_crypto_flight.json", "blackbox/qa/tmp_crypto_auto.json", "blackbox/qa/tmp_det1.bb", "sha256", "");
+    let d2: Result[String, String] = capsule_pack_signed(fs, fw, "blackbox/qa/tmp_crypto_flight.json", "blackbox/qa/tmp_crypto_auto.json", "blackbox/qa/tmp_det2.bb", "sha256", "");
+    if d1.is_err() || d2.is_err() { return Err("determinism pack failed"); }
+    let s1: String = match read_file(fs, "blackbox/qa/tmp_det1.bb") { Ok(s) => s, Err(_) => "" };
+    let s2: String = match read_file(fs, "blackbox/qa/tmp_det2.bb") { Ok(s) => s, Err(_) => "" };
+    if s1 != s2 {
+        return Err("FAIL double-run determinism: Run_1 != Run_2");
+    }
+
+    let _cl1: Result[Void, String] = oo_fs_remove_file(fw, "blackbox/qa/tmp_crypto_auto.json");
+    let _cl2: Result[Void, String] = oo_fs_remove_file(fw, "blackbox/qa/tmp_crypto_flight.json");
+    let _cl3: Result[Void, String] = oo_fs_remove_file(fw, "blackbox/qa/tmp_test_crc.bb");
+    let _cl4: Result[Void, String] = oo_fs_remove_file(fw, "blackbox/qa/tmp_test_sha.bb");
+    let _cl5: Result[Void, String] = oo_fs_remove_file(fw, "blackbox/qa/tmp_test_ed.bb");
+    let _cl6: Result[Void, String] = oo_fs_remove_file(fw, "blackbox/qa/tmp_test_crc.bb.tampered");
+    let _cl7: Result[Void, String] = oo_fs_remove_file(fw, "blackbox/qa/tmp_test_sha.bb.tampered");
+    let _cl8: Result[Void, String] = oo_fs_remove_file(fw, "blackbox/qa/tmp_test_ed.bb.tampered");
+    let _cl9: Result[Void, String] = oo_fs_remove_file(fw, "blackbox/qa/tmp_det1.bb");
+    let _cl10: Result[Void, String] = oo_fs_remove_file(fw, "blackbox/qa/tmp_det2.bb");
+
+    return Ok(0);
+}
+

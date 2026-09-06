@@ -24,16 +24,17 @@ import "cli_watch.oo";
 pub fn cli_help() -> String {
     let mut out: String = "Usage: blackbox autopsy|diff|inspect|trace|mcp|heal|pack|replay|watch [args...]\n\n";
     out = out + "Subcommands:\n";
-    out = out + "  autopsy [path]                 Parse autopsy JSON and print a 1-turn diagnosis\n";
+    out = out + "  autopsy [path] [--compact]     Parse autopsy JSON and print a 1-turn diagnosis\n";
     out = out + "  diff <file.oo>                 Run oodac tokens (OODA_COMPILER or OODAC_BIN)\n";
-    out = out + "  inspect tokens|check|emit-c|build <file.oo>\n";
+    out = out + "  diff-em <file.oo>              Diff pre-lowered tokens against .em bytecode\n";
+    out = out + "  inspect tokens|check|emit-c|build|em <file.oo>\n";
     out = out + "                                 Run a live oodac stage and print child text\n";
     out = out + "  trace                          Print a written flight log if one exists\n";
     out = out + "  mcp --stdio                    Start standalone JSON-RPC 2.0 MCP server\n";
     out = out + "  heal [path]                    Heal source defect from autopsy coordinates\n";
-    out = out + "  pack [file.bb] [autopsy.json] [flight.json]\n";
-    out = out + "                                 Bundle flight telemetry, autopsy, and registers into .bb\n";
-    out = out + "  replay <file.bb>               Verify integrity and reconstruct crash diagnosis\n";
+    out = out + "  pack [file.bb] [autopsy.json] [flight.json] [--sign <algo>] [--key <seed>]\n";
+    out = out + "                                 Bundle flight telemetry into signed .bb (crc32, sha256, ed25519)\n";
+    out = out + "  replay <file.bb> [--verify]    Verify integrity and reconstruct crash diagnosis\n";
     out = out + "  watch [dir] [--once] [--max-ticks N] [--exit-on-event]\n";
     out = out + "                                 Monitor directory for crash artifacts and emit repair recipe\n";
     out = out + "  version                        Display blackbox version\n";
@@ -47,7 +48,7 @@ fn cli_err(msg: String) -> Result[Int, String] {
     return Err(msg);
 }
 
-pub fn autopsy_read_report(fs: &FsReadCap, path: String) -> Result[String, String] {
+pub fn autopsy_read_report(fs: &FsReadCap, path: String, compact: Bool) -> Result[String, String] {
     let target: String = if chars_len(path) > 0 { path } else { dir_watcher_autopsy_file() };
     let rd: Result[String, String] = dir_watcher_read_autopsy(fs, target);
     if rd.is_err() {
@@ -55,11 +56,14 @@ pub fn autopsy_read_report(fs: &FsReadCap, path: String) -> Result[String, Strin
         return Err(e);
     }
     let json: String = match rd { Ok(s) => s, Err(_) => "" };
+    if compact {
+        return autopsy_format_from_json_compact(json);
+    }
     return autopsy_format_from_json(json);
 }
 
-pub fn cli_run_autopsy(fs: &FsReadCap, path: String) -> Result[Int, String] {
-    let rep: Result[String, String] = autopsy_read_report(fs, path);
+pub fn cli_run_autopsy(fs: &FsReadCap, path: String, compact: Bool) -> Result[Int, String] {
+    let rep: Result[String, String] = autopsy_read_report(fs, path, compact);
     if rep.is_err() {
         let e: String = match rep { Ok(_) => "", Err(m) => m };
         return cli_err(e);
@@ -96,6 +100,24 @@ pub fn cli_run_diff(p: &ProcessCap, fs: &FsReadCap, env: &EnvCap, file1: String,
     }
     let text2: String = match insp { Ok(s) => s, Err(_) => "" };
     println(text2);
+    return Ok(0);
+}
+
+pub fn cli_run_diff_em(p: &ProcessCap, fs: &FsReadCap, env: &EnvCap, file_path: String) -> Result[Int, String] {
+    if chars_len(file_path) == 0 { return cli_err("missing file argument for diff-em"); }
+    let loc: Result[String, String] = compiler_locate(fs, env);
+    if loc.is_err() {
+        let e: String = match loc { Ok(_) => "", Err(m) => m };
+        return cli_err(e);
+    }
+    let bin: String = match loc { Ok(s) => s, Err(_) => "" };
+    let cmp: Result[String, String] = ast_diff_em_file(p, bin, file_path);
+    if cmp.is_err() {
+        let e2: String = match cmp { Ok(_) => "", Err(m) => m };
+        return cli_err(e2);
+    }
+    let text: String = match cmp { Ok(s) => s, Err(_) => "" };
+    println(text);
     return Ok(0);
 }
 
@@ -162,13 +184,25 @@ pub fn cli_dispatch(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCa
         return cli_run_watch(p, fs, args);
     }
     if subcmd == "autopsy" {
-        let pth: String = if n > 1 { list_get(args, 1) } else { "" };
-        return cli_run_autopsy(fs, pth);
+        let mut pth: String = "";
+        let mut compact: Bool = false;
+        let mut i: Int = 1;
+        while i < n {
+            let a: String = list_get(args, i);
+            if a == "--compact" { compact = true; }
+            else if chars_len(pth) == 0 { pth = a; }
+            i = i + 1;
+        }
+        return cli_run_autopsy(fs, pth, compact);
     }
     if subcmd == "diff" {
         let f1: String = if n > 1 { list_get(args, 1) } else { "" };
         let f2: String = if n > 2 { list_get(args, 2) } else { "" };
         return cli_run_diff(p, fs, env, f1, f2);
+    }
+    if subcmd == "diff-em" {
+        let f1: String = if n > 1 { list_get(args, 1) } else { "" };
+        return cli_run_diff_em(p, fs, env, f1);
     }
     if subcmd == "inspect" {
         let st: String = if n > 1 { list_get(args, 1) } else { "" };

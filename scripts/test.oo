@@ -21,7 +21,10 @@ import "qa/double_run_proof.oo";
 import "qa/mcp_proof.oo";
 import "qa/heal_proof.oo";
 import "qa/capsule_proof.oo";
+import "qa/crypto_capsule_proof.oo";
 import "qa/watch_proof.oo";
+import "qa/compact_proof.oo";
+import "qa/em_proof.oo";
 import "qa/e2e_blue_ocean_proof.oo";
 
 pub fn test_run_all(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap) -> Result[Int, String] {
@@ -61,6 +64,12 @@ pub fn test_run_all(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCa
         return Err("test: capsule proof failed: " + e);
     }
 
+    let r_crypto_cap: Result[Int, String] = crypto_capsule_proof_run(fs, fw);
+    if r_crypto_cap.is_err() {
+        let e_cc: String = match r_crypto_cap { Ok(_) => "", Err(msg) => msg };
+        return Err("test: crypto capsule proof failed: " + e_cc);
+    }
+
     let _clean_fl: Result[Void, String] = oo_fs_remove_file(fw, ".blackbox/flight.json");
     let _clean_au: Result[Void, String] = oo_fs_remove_file(fw, ".blackbox/autopsy.json");
 
@@ -68,6 +77,18 @@ pub fn test_run_all(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCa
     if r_watch.is_err() {
         let e: String = match r_watch { Ok(_) => "", Err(msg) => msg };
         return Err("test: watch proof failed: " + e);
+    }
+
+    let r_comp: Result[Int, String] = compact_proof_run(fs);
+    if r_comp.is_err() {
+        let e: String = match r_comp { Ok(_) => "", Err(msg) => msg };
+        return Err("test: compact proof failed: " + e);
+    }
+
+    let r_em: Result[Int, String] = em_proof_run(p, fs, env);
+    if r_em.is_err() {
+        let e_em: String = match r_em { Ok(_) => "", Err(msg) => msg };
+        return Err("test: em proof failed: " + e_em);
     }
 
     let r_e2e: Result[Int, String] = e2e_blue_ocean_proof_run(p, fs, fw, env);

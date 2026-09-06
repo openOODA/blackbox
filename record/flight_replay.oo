@@ -1,0 +1,70 @@
+// # Portable Flight Capsule Replay Engine
+//
+// Logline: Formats and executes deterministic replays of .bb flight capsules under capability security.
+//
+// Setup: FsReadCap. Verifies cryptographic signatures and reproduces register state and autopsy report.
+//
+// Beats:
+//   1. Implement capsule_replay_report rendering security header, registers, autopsy, and telemetry trace.
+//   2. Implement capsule_replay reading .bb capsule and emitting full report.
+//   3. Implement capsule_replay_verified supporting verify-only mode.
+
+import "flight_log.oo";
+import "autopsy/autopsy_parser.oo";
+import "autopsy/report_formatter.oo";
+import "record/flight_capsule.oo";
+
+pub fn capsule_replay_report(data: CapsuleData) -> String {
+    let mut out: String = "=== BLACKBOX CAPSULE REPLAY ===\n";
+    out = out + "Security: algo=" + data.algo + " (verified: OK)\n";
+    if chars_len(data.signer) > 0 {
+        out = out + "Signer: " + data.signer + "\n";
+    }
+    out = out + "Registers:\n";
+    out = out + "  RIP: " + data.registers_rip + "  RSP: " + data.registers_rsp + "  RBP: " + data.registers_rbp + "\n";
+    out = out + "Capabilities Held Mask: " + data.caps_mask.to_string() + "\n\n";
+
+    let r_auto: Result[AutopsyData, String] = autopsy_parse(data.autopsy_json);
+    let auto_text: String = if r_auto.is_ok() {
+        let ad: AutopsyData = match r_auto { Ok(d) => d, Err(_) => return out };
+        autopsy_format_report(ad)
+    } else {
+        "=== BLACKBOX CRASH AUTOPSY ===\n" + data.autopsy_json
+    };
+    out = out + auto_text;
+    out = out + "\n\n";
+
+    out = out + "Flight Trace:\n";
+    let r_stream: Result[String, String] = flight_format_from_json(data.flight_json);
+    let mut stream_text: String = "  (no telemetry events recorded)";
+    if r_stream.is_ok() {
+        let st: String = match r_stream { Ok(s) => s, Err(_) => "" };
+        if chars_len(st) > 0 {
+            stream_text = st;
+        }
+    }
+    out = out + stream_text;
+    return out;
+}
+
+pub fn capsule_replay_verified(fs: &FsReadCap, capsule_path: String, verify_only: Bool) -> Result[String, String] {
+    let r_data: Result[CapsuleData, String] = capsule_unpack(fs, capsule_path);
+    if r_data.is_err() {
+        let e: String = match r_data { Ok(_) => "", Err(m) => m };
+        return Err(e);
+    }
+    let data: CapsuleData = match r_data { Ok(d) => d, Err(_) => return Err("unreachable") };
+    if verify_only {
+        let mut msg: String = "[VERIFY] OK (algo: " + data.algo;
+        if chars_len(data.signer) > 0 {
+            msg = msg + ", signer: " + data.signer;
+        }
+        msg = msg + ")";
+        return Ok(msg);
+    }
+    return Ok(capsule_replay_report(data));
+}
+
+pub fn capsule_replay(fs: &FsReadCap, capsule_path: String) -> Result[String, String] {
+    return capsule_replay_verified(fs, capsule_path, false);
+}

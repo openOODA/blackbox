@@ -16,3 +16,5 @@ import "event_record.oo";
 import "ring_buffer.oo";
 import "flight_log.oo";
 import "flight_capsule.oo";
+import "flight_replay.oo";
+import "crypto_agile.oo";
