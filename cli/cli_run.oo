@@ -33,7 +33,7 @@ pub fn cli_help() -> String {
     out = out + "  mcp --stdio                    Start standalone JSON-RPC 2.0 MCP server\n";
     out = out + "  heal [path]                    Heal source defect from autopsy coordinates\n";
     out = out + "  pack [file.bb] [autopsy.json] [flight.json] [--sign <algo>] [--key <seed>]\n";
-    out = out + "                                 Bundle flight telemetry into signed .bb (crc32, sha256, ed25519)\n";
+    out = out + "                                 Bundle flight telemetry into signed .bb (crc32, sha256, blake3, sha3, sha512, ed25519)\n";
     out = out + "  replay <file.bb> [--verify]    Verify integrity and reconstruct crash diagnosis\n";
     out = out + "  watch [dir] [--once] [--max-ticks N] [--exit-on-event]\n";
     out = out + "                                 Monitor directory for crash artifacts and emit repair recipe\n";

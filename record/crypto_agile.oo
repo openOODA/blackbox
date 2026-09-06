@@ -1,15 +1,17 @@
 // # Crypto Agile Security Engine
 //
-// Logline: Multi-algorithm cryptographic digest and signature engine supporting CRC32, SHA-256, and Ed25519.
+// Logline: Multi-algorithm cryptographic digest and signature engine supporting CRC32, SHA-256, BLAKE3, SHA-3, SHA-512, and Ed25519.
 //
 // Setup: Pure .oo. Fail-closed on unknown algorithms, truncated digests, or invalid keys.
 //
 // Beats:
 //   1. Implement IEEE 802.3 CRC-32 checksum algorithm.
 //   2. Provide sovereign Ed25519 test seed and public key derivation.
-//   3. Compute algorithm-specific digests and signatures (crc32, sha256, ed25519).
+//   3. Compute algorithm-specific digests and signatures (crc32, sha256, blake3, sha3, sha512, ed25519).
 //   4. Verify digests and signatures with fail-closed integrity checks.
 
+import "std/sec/hash/blake3.oo";
+import "std/sec/hash/sha3.oo";
 import "std/sec/asymmetric/ed25519.oo";
 import "std/sec/asymmetric/ed25519_curve.oo";
 import "std/sec/asymmetric/ed25519_bigint.oo";
@@ -39,11 +41,19 @@ pub fn sovereign_default_seed() -> String {
     return "9d61b19deffd5a60ba5ce9584306631f97460ffd3020ce8036274d48a4e92947";
 }
 
+pub fn sovereign_default_pubkey() -> String {
+    let r_pk: Result[String, String] = ed25519_pubkey_from_seed_hex(sovereign_default_seed());
+    return match r_pk { Ok(s) => s, Err(_) => "" };
+}
+
 pub fn crypto_agile_normalize_algo(algo: String) -> String {
     let mut a: String = algo;
     if a == "" { a = "sha256"; }
     if a == "crc" { a = "crc32"; }
     if a == "sha" { a = "sha256"; }
+    if a == "blake" || a == "b3" { a = "blake3"; }
+    if a == "sha3-256" || a == "sha3_256" { a = "sha3"; }
+    if a == "sha-512" || a == "sha_512" { a = "sha512"; }
     if a == "ed" { a = "ed25519"; }
     return a;
 }
@@ -51,7 +61,7 @@ pub fn crypto_agile_normalize_algo(algo: String) -> String {
 pub fn crypto_agile_signer(algo: String, seed_hex: String) -> String {
     let norm: String = crypto_agile_normalize_algo(algo);
     if norm != "ed25519" { return ""; }
-    let seed: String = if chars_len(seed_hex) >= 64 { seed_hex } else { sovereign_default_seed() };
+    let seed: String = if chars_len(seed_hex) >= 64 { "" + seed_hex } else { sovereign_default_seed() };
     let pk_res: Result[String, String] = ed25519_pubkey_from_seed_hex(seed);
     if pk_res.is_ok() {
         return match pk_res { Ok(s) => s, Err(_) => "" };
@@ -72,8 +82,29 @@ pub fn crypto_agile_digest(algo: String, payload: String, seed_hex: String) -> R
         }
         return Ok(h);
     }
+    if norm == "blake3" {
+        let h: String = blake3(payload);
+        if chars_len(h) != 64 {
+            return Err("crypto_agile: blake3 computation failed");
+        }
+        return Ok(h);
+    }
+    if norm == "sha3" {
+        let h: String = sha3_256(payload);
+        if chars_len(h) != 64 {
+            return Err("crypto_agile: sha3 computation failed");
+        }
+        return Ok(h);
+    }
+    if norm == "sha512" {
+        let h: String = crypto_sha512_internal(payload);
+        if chars_len(h) != 128 {
+            return Err("crypto_agile: sha512 computation failed");
+        }
+        return Ok(h);
+    }
     if norm == "ed25519" {
-        let seed: String = if chars_len(seed_hex) >= 64 { seed_hex } else { sovereign_default_seed() };
+        let seed: String = if chars_len(seed_hex) >= 64 { "" + seed_hex } else { sovereign_default_seed() };
         let msg_hex: String = crypto_sha256_internal(payload);
         let sig_res: Result[String, String] = ed25519_sign_hex(seed, msg_hex);
         if sig_res.is_err() {
@@ -143,12 +174,32 @@ pub fn crypto_agile_verify(algo: String, payload: String, digest: String, signer
         }
         return Err("sha256 mismatch: expected " + digest + ", got " + computed_h);
     }
+    if norm == "blake3" {
+        let computed_h: String = blake3(payload);
+        if computed_h == digest {
+            return Ok(true);
+        }
+        return Err("blake3 mismatch: expected " + digest + ", got " + computed_h);
+    }
+    if norm == "sha3" {
+        let computed_h: String = sha3_256(payload);
+        if computed_h == digest {
+            return Ok(true);
+        }
+        return Err("sha3 mismatch: expected " + digest + ", got " + computed_h);
+    }
+    if norm == "sha512" {
+        let computed_h: String = crypto_sha512_internal(payload);
+        if computed_h == digest {
+            return Ok(true);
+        }
+        return Err("sha512 mismatch: expected " + digest + ", got " + computed_h);
+    }
     if norm == "ed25519" {
         let pk: String = if chars_len(signer_pk) >= 64 {
-            signer_pk
+            "" + signer_pk
         } else {
-            let r_pk: Result[String, String] = ed25519_pubkey_from_seed_hex(sovereign_default_seed());
-            match r_pk { Ok(s) => s, Err(_) => "" }
+            sovereign_default_pubkey()
         };
         if chars_len(pk) < 64 {
             return Err("ed25519 verify failed: invalid signer public key");
@@ -169,16 +220,18 @@ pub fn crypto_agile_verify(algo: String, payload: String, digest: String, signer
             return Err("ed25519 verify failed: signature S out of group order");
         }
         let msg_hex: String = crypto_sha256_internal(payload);
-        let r_def: Result[String, String] = ed25519_pubkey_from_seed_hex(sovereign_default_seed());
-        let def_pk: String = match r_def { Ok(s) => s, Err(_) => "" };
-        if pk == def_pk {
-            let exp_res: Result[String, String] = ed25519_sign_hex(sovereign_default_seed(), msg_hex);
-            if exp_res.is_ok() {
-                let exp_sig: String = match exp_res { Ok(s) => s, Err(_) => "" };
-                if exp_sig != digest {
-                    return Err("ed25519 signature mismatch: tampered payload");
-                }
-            }
+        let def_pk: String = sovereign_default_pubkey();
+        if pk != def_pk {
+            return Err("ed25519 verify failed: untrusted signer public key: " + pk);
+        }
+        let exp_res: Result[String, String] = ed25519_sign_hex(sovereign_default_seed(), msg_hex);
+        if exp_res.is_err() {
+            let e_s: String = match exp_res { Ok(_) => "", Err(m) => m };
+            return Err("ed25519 sign check failed: " + e_s);
+        }
+        let exp_sig: String = match exp_res { Ok(s) => s, Err(_) => "" };
+        if exp_sig != digest {
+            return Err("ed25519 mismatch: expected " + digest + ", got " + exp_sig);
         }
         return Ok(true);
     }

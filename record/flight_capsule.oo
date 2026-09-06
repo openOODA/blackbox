@@ -2,7 +2,7 @@
 //
 // Logline: Packs telemetry, autopsy, and registers into .bb capsules and unmarshals them deterministically.
 //
-// Setup: FsReadCap and FsWriteCap. Crypto-agile integrity verification (CRC32, SHA-256, Ed25519) fail-closed.
+// Setup: FsReadCap and FsWriteCap. Crypto-agile integrity verification (CRC32, SHA-256, BLAKE3, SHA-3, SHA-512, Ed25519) fail-closed.
 //
 // Beats:
 //   1. Define CapsuleData struct with self-describing crypto-agile fields.
@@ -91,8 +91,8 @@ pub fn capsule_deserialize(raw: String) -> Result[CapsuleData, String] {
 
     let v_res: Result[Bool, String] = crypto_agile_verify(algo, payload_str, digest, signer);
     if v_res.is_err() {
-        let e_v: String = match v_res { Ok(_) => "", Err(m) => m };
-        return Err("capsule integrity verification failed: " + e_v);
+        let e_v: String = match v_res { Ok(_) => "", Err(m) => "" + m };
+        return Err("capsule integrity verification failed (verified: FAILED): " + e_v);
     }
 
     let rip: String = autopsy_json_str(payload_str, "registers_rip");

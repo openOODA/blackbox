@@ -50,7 +50,7 @@ pub fn capsule_replay_report(data: CapsuleData) -> String {
 pub fn capsule_replay_verified(fs: &FsReadCap, capsule_path: String, verify_only: Bool) -> Result[String, String] {
     let r_data: Result[CapsuleData, String] = capsule_unpack(fs, capsule_path);
     if r_data.is_err() {
-        let e: String = match r_data { Ok(_) => "", Err(m) => m };
+        let e: String = match r_data { Ok(_) => "", Err(m) => "" + m };
         return Err(e);
     }
     let data: CapsuleData = match r_data { Ok(d) => d, Err(_) => return Err("unreachable") };

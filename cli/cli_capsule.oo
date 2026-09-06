@@ -13,8 +13,8 @@ import "record/flight_capsule.oo";
 import "record/flight_replay.oo";
 
 fn cli_capsule_err(msg: String) -> Result[Int, String] {
-    let line: String = "ERR " + msg;
-    println(line);
+    print("ERR ");
+    println(msg);
     return Err(msg);
 }
 
@@ -61,7 +61,7 @@ pub fn cli_run_pack(fs: &FsReadCap, fw: &FsWriteCap, args: List[String]) -> Resu
 
     let r_pack: Result[String, String] = capsule_pack_signed(fs, fw, flight_path, autopsy_path, out_path, algo, seed);
     if r_pack.is_err() {
-        let e: String = match r_pack { Ok(_) => "", Err(m) => m };
+        let e: String = match r_pack { Ok(_) => "", Err(m) => "" + m };
         return cli_capsule_err(e);
     }
     let dest: String = match r_pack { Ok(s) => s, Err(_) => "" };
@@ -100,7 +100,7 @@ pub fn cli_run_replay(fs: &FsReadCap, args: List[String]) -> Result[Int, String]
 
     let r_rep: Result[String, String] = capsule_replay_verified(fs, capsule_path, verify_only);
     if r_rep.is_err() {
-        let e: String = match r_rep { Ok(_) => "", Err(m) => m };
+        let e: String = match r_rep { Ok(_) => "", Err(m) => "" + m };
         return cli_capsule_err(e);
     }
     let report: String = match r_rep { Ok(s) => s, Err(_) => "" };
