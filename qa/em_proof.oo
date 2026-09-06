@@ -1,0 +1,80 @@
+// # Blackbox E-M Lowering Proof
+//
+// Logline: Proves that inspect-em and diff-em verify lowering fidelity and detect lowering regressions.
+//
+// Setup: ProcessCap, FsReadCap, EnvCap. Fails closed on missing compiler, lowering regression, or non-determinism.
+//
+// Beats:
+//   1. Inspect canonical .em module output for header magic, exports, and bytecode.
+//   2. Diff AST tokens against emitted EM bytecode on clean source and assert OK_VERIFIED.
+//   3. Probe adversarial synthetic regression and assert REGRESSION_DETECTED with dropped symbol name.
+//   4. Assert double-run determinism: Run_1 == Run_2.
+
+import "diff/compiler_runner.oo";
+import "diff/em_diff.oo";
+
+pub fn em_proof_run(p: &ProcessCap, fs: &FsReadCap, env: &EnvCap) -> Result[Int, String] {
+    let loc: Result[String, String] = compiler_locate(fs, env);
+    if loc.is_err() {
+        let e: String = match loc { Ok(_) => "", Err(m) => m };
+        return Err("em_proof: compiler locate failed: " + e);
+    }
+    let bin: String = match loc { Ok(s) => s, Err(_) => "" };
+
+    let target_file: String = if path_exists(fs, "blackbox/record/event_record.oo") {
+        "blackbox/record/event_record.oo"
+    } else {
+        "record/event_record.oo"
+    };
+
+    // 1. Inspect EM
+    let r_insp: Result[String, String] = em_inspect_source(p, bin, target_file);
+    if r_insp.is_err() {
+        let e2: String = match r_insp { Ok(_) => "", Err(m) => m };
+        return Err("em_proof: inspect em failed: " + e2);
+    }
+    let insp_text: String = match r_insp { Ok(s) => s, Err(_) => "" };
+    if str_index_of(insp_text, "EM01") < 0 {
+        return Err("em_proof: missing EM01 magic");
+    }
+    if str_index_of(insp_text, "EXPORTS:") < 0 {
+        return Err("em_proof: missing EXPORTS section");
+    }
+    if str_index_of(insp_text, "BYTECODE:") < 0 {
+        return Err("em_proof: missing BYTECODE section");
+    }
+
+    // 2. Diff EM (Clean AST)
+    let r_diff: Result[String, String] = em_diff_source(p, bin, target_file);
+    if r_diff.is_err() {
+        let e3: String = match r_diff { Ok(_) => "", Err(m) => m };
+        return Err("em_proof: diff em failed: " + e3);
+    }
+    let diff_text: String = match r_diff { Ok(s) => s, Err(_) => "" };
+    if str_index_of(diff_text, "OK_VERIFIED") < 0 {
+        return Err("em_proof: expected OK_VERIFIED for clean source");
+    }
+    if str_index_of(diff_text, "zero lowering regressions") < 0 {
+        return Err("em_proof: expected zero lowering regressions");
+    }
+
+    // 3. Adversarial Falsification Gate: inject dropped function
+    let fake_tokens: String = "fn valid_worker() fn dropped_worker()";
+    let fake_em: String = "# EM-MODULE v1\nEXPORTS:\nEXPORT fn valid_worker 0 0\n";
+    let bad_diff: String = em_diff_ast_vs_em("adversarial_test.oo", fake_tokens, fake_em);
+    if str_index_of(bad_diff, "REGRESSION_DETECTED") < 0 {
+        return Err("em_proof: adversarial test failed to flag REGRESSION_DETECTED");
+    }
+    if str_index_of(bad_diff, "LOWERING_DROP: fn dropped_worker") < 0 {
+        return Err("em_proof: adversarial test failed to flag dropped symbol");
+    }
+
+    // 4. Double-run determinism
+    let r_diff2: Result[String, String] = em_diff_source(p, bin, target_file);
+    let diff_text2: String = match r_diff2 { Ok(s) => s, Err(_) => "" };
+    if diff_text != diff_text2 {
+        return Err("em_proof: double-run determinism failure");
+    }
+
+    return Ok(0);
+}

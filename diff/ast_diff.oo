@@ -11,6 +11,7 @@
 //   4. Invoke compiler_run_tokens on file targets.
 
 import "compiler_runner.oo";
+import "em_diff.oo";
 
 pub fn ast_diff_split_lines(text: String) -> List[String] {
     let n: Int = chars_len(text);
@@ -105,4 +106,8 @@ pub fn ast_diff_inspect_file(p: &ProcessCap, bin: String, file: String) -> Resul
     out = out + raw + "\n";
     out = out + "===============================";
     return Ok(out);
+}
+
+pub fn ast_diff_em_file(p: &ProcessCap, bin: String, file: String) -> Result[String, String] {
+    return em_diff_source(p, bin, file);
 }

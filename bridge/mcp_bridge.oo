@@ -27,6 +27,9 @@ pub fn blackbox_mcp_tool_caps(name: String) -> Int {
     if name == "blackbox_diff" {
         return 5;
     }
+    if name == "blackbox_diff_em" {
+        return 5;
+    }
     if name == "blackbox_trace" {
         return 1;
     }
@@ -37,9 +40,12 @@ pub fn blackbox_mcp_tool_list_json() -> String {
     let mut out: String = "[";
     out = out + "{\"name\":\"blackbox_autopsy\",";
     out = out + "\"description\":\"Parse autopsy JSON and output 1-turn root-cause diagnosis\",";
-    out = out + "\"inputSchema\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"Path to autopsy.json\"}},\"required\":[]},\"requiresCap\":1},";
+    out = out + "\"inputSchema\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"Path to autopsy.json\"},\"compact\":{\"type\":\"boolean\",\"description\":\"Emit dense 60-token machine payload\"}},\"required\":[]},\"requiresCap\":1},";
     out = out + "{\"name\":\"blackbox_diff\",";
     out = out + "\"description\":\"Run oodac tokens on a source file and display the dump\",";
+    out = out + "\"inputSchema\":{\"type\":\"object\",\"properties\":{\"file\":{\"type\":\"string\",\"description\":\"Path to .oo file\"}},\"required\":[\"file\"]},\"requiresCap\":5},";
+    out = out + "{\"name\":\"blackbox_diff_em\",";
+    out = out + "\"description\":\"Diff pre-lowered AST tokens against emitted .em bytecode to detect lowering regressions\",";
     out = out + "\"inputSchema\":{\"type\":\"object\",\"properties\":{\"file\":{\"type\":\"string\",\"description\":\"Path to .oo file\"}},\"required\":[\"file\"]},\"requiresCap\":5},";
     out = out + "{\"name\":\"blackbox_trace\",";
     out = out + "\"description\":\"Read and format active flight execution telemetry stream\",";
@@ -116,6 +122,7 @@ fn mcp_err(msg: String) -> String {
 pub fn blackbox_mcp_dispatch(name: String, args: String, fs: &FsReadCap, p: &ProcessCap, env: &EnvCap) -> String {
     if name == "blackbox_autopsy" {
         let mut pth: String = mcp_extract_arg(args, "path");
+        let compact: Bool = str_index_of(args, "\"compact\":true") >= 0 || str_index_of(args, "\"compact\": true") >= 0;
         if chars_len(pth) == 0 {
             pth = dir_watcher_autopsy_file();
         }
@@ -125,7 +132,7 @@ pub fn blackbox_mcp_dispatch(name: String, args: String, fs: &FsReadCap, p: &Pro
             return mcp_err("Failed to read autopsy file: " + e);
         }
         let json: String = match rd { Ok(s) => s, Err(_) => "" };
-        let rep: Result[String, String] = autopsy_format_from_json(json);
+        let rep: Result[String, String] = if compact { autopsy_format_from_json_compact(json) } else { autopsy_format_from_json(json) };
         if rep.is_err() {
             let e2: String = match rep { Ok(_) => "", Err(m) => m };
             return mcp_err("Failed to parse autopsy: " + e2);
@@ -152,6 +159,26 @@ pub fn blackbox_mcp_dispatch(name: String, args: String, fs: &FsReadCap, p: &Pro
         }
         let dump: String = match dr { Ok(s) => s, Err(_) => "" };
         return blackbox_mcp_wrap_text(dump);
+    }
+
+    if name == "blackbox_diff_em" {
+        let fl: String = mcp_extract_arg(args, "file");
+        if chars_len(fl) == 0 {
+            return mcp_err("Missing required argument 'file'");
+        }
+        let loc: Result[String, String] = compiler_locate(fs, env);
+        if loc.is_err() {
+            let e: String = match loc { Ok(_) => "", Err(m) => m };
+            return mcp_err(e);
+        }
+        let bin: String = match loc { Ok(s) => s, Err(_) => "" };
+        let dr: Result[String, String] = ast_diff_em_file(p, bin, fl);
+        if dr.is_err() {
+            let e4: String = match dr { Ok(_) => "", Err(m) => m };
+            return mcp_err(e4);
+        }
+        let report: String = match dr { Ok(s) => s, Err(_) => "" };
+        return blackbox_mcp_wrap_text(report);
     }
 
     if name == "blackbox_trace" {

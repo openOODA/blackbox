@@ -1,0 +1,72 @@
+// # Compact Autopsy Verification Proof
+//
+// Logline: Proves that compact autopsy formatting reduces payload size while preserving remediation data.
+//
+// Setup: Fails closed on formatting error, missing coordinate, or inadequate compression.
+//
+// Beats:
+//   1. Parse sample autopsy JSON fixture in full and compact modes.
+//   2. Assert compact format preserves signal, root cause, coordinate, and remediation.
+//   3. Assert compact output achieves >= 60% byte compression compared to full report.
+//   4. Assert double-run determinism: Run_1 == Run_2.
+
+import "autopsy/report_formatter.oo";
+
+pub fn compact_proof_run(fs: &FsReadCap) -> Result[Int, String] {
+    let pth: String = if path_exists(fs, "blackbox/qa/autopsy_null.json") {
+        "blackbox/qa/autopsy_null.json"
+    } else {
+        "qa/autopsy_null.json"
+    };
+
+    let rd: Result[String, String] = read_file(fs, pth);
+    if rd.is_err() {
+        return Err("compact_proof: failed to read autopsy_null.json");
+    }
+    let json: String = match rd { Ok(s) => s, Err(_) => "" };
+
+    let r_full: Result[String, String] = autopsy_format_from_json(json);
+    if r_full.is_err() {
+        return Err("compact_proof: autopsy_format_from_json failed");
+    }
+    let full_text: String = match r_full { Ok(s) => s, Err(_) => "" };
+
+    let r_comp: Result[String, String] = autopsy_format_from_json_compact(json);
+    if r_comp.is_err() {
+        return Err("compact_proof: autopsy_format_from_json_compact failed");
+    }
+    let comp_text: String = match r_comp { Ok(s) => s, Err(_) => "" };
+
+    if str_index_of(comp_text, "SIGSEGV:11") < 0 {
+        return Err("compact_proof: missing signal name and number");
+    }
+    if str_index_of(comp_text, "NULL_POINTER_DEREFERENCE") < 0 {
+        return Err("compact_proof: missing root cause");
+    }
+    if str_index_of(comp_text, "core/alloc/arena.oo:42:5:arena_alloc") < 0 {
+        return Err("compact_proof: missing failure coordinate");
+    }
+    if str_index_of(comp_text, "Add a null-check guard") < 0 {
+        return Err("compact_proof: missing remediation prompt");
+    }
+
+    let len_full: Int = bytes_len(full_text);
+    let len_comp: Int = bytes_len(comp_text);
+
+    if len_comp >= len_full {
+        return Err("compact_proof: compact mode must be smaller than full mode");
+    }
+
+    let saved_pct: Int = ((len_full - len_comp) * 100) / len_full;
+    if saved_pct < 60 {
+        return Err("compact_proof: expected at least 60% size reduction, got: " + saved_pct.to_string() + "%");
+    }
+
+    let r_comp2: Result[String, String] = autopsy_format_from_json_compact(json);
+    let comp_text2: String = match r_comp2 { Ok(s) => s, Err(_) => "" };
+    if comp_text != comp_text2 {
+        return Err("compact_proof: double-run determinism failure");
+    }
+
+    return Ok(0);
+}

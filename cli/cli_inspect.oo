@@ -11,6 +11,7 @@
 //   4. Nonzero when the child failed so gcc diagnostics stay on stdout.
 
 import "diff/compiler_runner.oo";
+import "diff/em_diff.oo";
 
 fn inspect_err(msg: String) -> Result[Int, String] {
     let line: String = "ERR " + msg;
@@ -36,6 +37,8 @@ pub fn cli_run_inspect(p: &ProcessCap, fs: &FsReadCap, env: &EnvCap, stage: Stri
     let bin: String = match loc { Ok(s) => s, Err(_) => "" };
     let r: Result[String, String] = if stage == "build" {
         compiler_run_build(p, bin, file_path, out_arg)
+    } else if stage == "em" {
+        em_inspect_source(p, bin, file_path)
     } else {
         compiler_run_stage(p, bin, stage, file_path)
     };

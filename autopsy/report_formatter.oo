@@ -107,6 +107,13 @@ pub fn autopsy_format_from_json(json: String) -> Result[String, String] {
     return Ok(autopsy_format_report(data));
 }
 
+pub fn autopsy_format_from_json_compact(json: String) -> Result[String, String] {
+    let res: Result[AutopsyData, String] = autopsy_parse(json);
+    let data: AutopsyData = match res { Ok(d) => d, Err(e) => return Err(e); };
+    return Ok(autopsy_format_compact(data));
+}
+
 pub fn report_formatter_from_json(json: String) -> Result[String, String] {
     return autopsy_format_from_json(json);
 }
+
