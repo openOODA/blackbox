@@ -73,7 +73,8 @@ pub fn crypto_agile_digest(algo: String, payload: String, seed_hex: String) -> R
     let norm: String = crypto_agile_normalize_algo(algo);
     if norm == "crc32" {
         let c: Int = capsule_crc32(payload);
-        return Ok(c.to_string());
+        let s_c: String = c.to_string();
+        return Ok(s_c);
     }
     if norm == "sha256" {
         let h: String = crypto_sha256_internal(payload);
