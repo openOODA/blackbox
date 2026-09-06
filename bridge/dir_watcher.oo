@@ -101,7 +101,8 @@ pub fn dir_watcher_resolve_paths(fs: &FsReadCap, dir: String) -> DirWatchPaths {
 
 pub fn dir_watcher_state_init(fs: &FsReadCap, dir: String) -> Result[DirWatchState, String] {
     let paths: DirWatchPaths = dir_watcher_resolve_paths(fs, dir);
-    if !paths.valid { return Err(paths.err); }
+    let err_msg: String = paths.err;
+    if !paths.valid { return Err(err_msg); }
     let a_ex: Bool = if chars_len(paths.autopsy_path) > 0 { path_exists(fs, paths.autopsy_path) } else { false };
     let a_sz: Int = if a_ex { file_size(fs, paths.autopsy_path) } else { 0 };
     let f_ex: Bool = if chars_len(paths.flight_path) > 0 { path_exists(fs, paths.flight_path) } else { false };
@@ -118,7 +119,8 @@ pub fn dir_watcher_state_init(fs: &FsReadCap, dir: String) -> Result[DirWatchSta
 
 pub fn dir_watcher_poll_tick(fs: &FsReadCap, state: DirWatchState) -> Result[DirWatchTick, String] {
     let paths: DirWatchPaths = dir_watcher_resolve_paths(fs, state.dir);
-    if !paths.valid { return Err(paths.err); }
+    let err_msg: String = paths.err;
+    if !paths.valid { return Err(err_msg); }
     let cur_a_ex: Bool = if chars_len(paths.autopsy_path) > 0 { path_exists(fs, paths.autopsy_path) } else { false };
     let cur_a_sz: Int = if cur_a_ex { file_size(fs, paths.autopsy_path) } else { 0 };
     let cur_f_ex: Bool = if chars_len(paths.flight_path) > 0 { path_exists(fs, paths.flight_path) } else { false };
@@ -188,7 +190,8 @@ pub fn dir_watcher_poll_tick(fs: &FsReadCap, state: DirWatchState) -> Result[Dir
 
 pub fn dir_watcher_check_once(fs: &FsReadCap, dir: String) -> Result[String, String] {
     let paths: DirWatchPaths = dir_watcher_resolve_paths(fs, dir);
-    if !paths.valid { return Err(paths.err); }
+    let err_msg: String = paths.err;
+    if !paths.valid { return Err(err_msg); }
     if chars_len(paths.autopsy_path) > 0 && path_exists(fs, paths.autopsy_path) {
         let sz: Int = file_size(fs, paths.autopsy_path);
         if sz == 0 { return Err("empty autopsy json"); }
