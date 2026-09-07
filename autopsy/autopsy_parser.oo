@@ -63,7 +63,7 @@ pub fn autopsy_parse(json: String) -> Result[AutopsyData, String] {
     let mut fault_addr: String = autopsy_json_str(json, "fault_address");
     if chars_len(fault_addr) == 0 { fault_addr = "0x0000000000000000"; }
     let mut coord_raw: String = autopsy_json_str(json, "failure_coordinate");
-    if chars_len(coord_raw) == 0 { coord_raw = "core/alloc/arena.oo:42:5:arena_alloc"; }
+    if chars_len(coord_raw) == 0 { coord_raw = "unknown"; }
 
     let mut cap_trap: Bool = autopsy_json_bool(json, "capability_trap");
     if !cap_trap { cap_trap = autopsy_json_bool(json, "cap_trapped"); }
@@ -88,25 +88,15 @@ pub fn autopsy_parse(json: String) -> Result[AutopsyData, String] {
         remed = root_cause_remediation(rc, s_coord);
     }
 
-    let mut s_rip: String = autopsy_json_str(json, "rip");
-    if chars_len(s_rip) == 0 { s_rip = "0x000055555556a1b0"; }
-    let mut s_rsp: String = autopsy_json_str(json, "rsp");
-    if chars_len(s_rsp) == 0 { s_rsp = "0x00007fffffffe210"; }
-    let mut s_rbp: String = autopsy_json_str(json, "rbp");
-    if chars_len(s_rbp) == 0 { s_rbp = "0x00007fffffffe240"; }
-
+    let s_rip: String = autopsy_json_str(json, "rip");
+    let s_rsp: String = autopsy_json_str(json, "rsp");
+    let s_rbp: String = autopsy_json_str(json, "rbp");
     let mut bt: List[AutopsyStackFrame] = list_new();
-    bt = list_push(bt, autopsy_frame_new(0, s_rip, "arena_alloc", "core/alloc/arena.oo:42"));
-    bt = list_push(bt, autopsy_frame_new(1, "0x000055555556b2c4", "list_push", "core/list/list.oo:118"));
-    bt = list_push(bt, autopsy_frame_new(2, "0x000055555556c4d8", "main", "cli/main.oo:35"));
-
-    let mut caps: List[String] = list_new();
-    if mask_held > 0 {
-        caps = autopsy_caps_from_mask(mask_held);
-    } else {
-        caps = list_push(caps, "&FsReadCap");
-        caps = list_push(caps, "&ProcessCap");
+    if chars_len(s_rip) > 0 {
+        bt = list_push(bt, autopsy_frame_new(0, s_rip, "", coord_raw));
     }
+    let mut caps: List[String] = list_new();
+    if mask_held > 0 { caps = autopsy_caps_from_mask(mask_held); }
 
     let data: AutopsyData = AutopsyData {
         schema_version: ver,

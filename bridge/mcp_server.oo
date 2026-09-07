@@ -145,7 +145,7 @@ pub fn mcp_server_handle_request(body: String, caps_held: Int, fs: &FsReadCap, p
     let params: String = json_val(body, "params", true);
 
     if method == "initialize" {
-        return mcp_rpc_ok(id, "{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"openOODA blackbox\",\"version\":\"0.1.0\"}}");
+        return mcp_rpc_ok(id, "{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"openOODA blackbox\",\"version\":\"0.0.3\"}}");
     }
     if method == "notifications/initialized" { return ""; }
     if method == "ping" { return mcp_rpc_ok(id, "{}"); }

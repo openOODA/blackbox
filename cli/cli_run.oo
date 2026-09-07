@@ -230,9 +230,9 @@ pub fn cli_dispatch(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCa
         }
         return mcp_server_run_stdio(p, fs, fw, env);
     }
-    if subcmd == "version" { println("openOODA blackbox v0.1.0"); return Ok(0); }
-    if subcmd == "--version" { println("openOODA blackbox v0.1.0"); return Ok(0); }
-    if subcmd == "-v" { println("openOODA blackbox v0.1.0"); return Ok(0); }
+    if subcmd == "version" { println("openOODA blackbox v0.0.3"); return Ok(0); }
+    if subcmd == "--version" { println("openOODA blackbox v0.0.3"); return Ok(0); }
+    if subcmd == "-v" { println("openOODA blackbox v0.0.3"); return Ok(0); }
     if subcmd == "help" { println(cli_help()); return Ok(0); }
     if subcmd == "--help" { println(cli_help()); return Ok(0); }
     if subcmd == "-h" { println(cli_help()); return Ok(0); }

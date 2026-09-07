@@ -32,7 +32,7 @@ pub fn proof_mcp_initialize(p: &ProcessCap, fs: &FsReadCap, env: &EnvCap) -> Res
     if str_index_of(resp, "\"id\":1") < 0 { return Err("proof_mcp_initialize: missing id"); }
     if str_index_of(resp, "\"protocolVersion\":\"2024-11-05\"") < 0 { return Err("proof_mcp_initialize: missing protocolVersion"); }
     if str_index_of(resp, "openOODA blackbox") < 0 { return Err("proof_mcp_initialize: missing serverInfo name"); }
-    if str_index_of(resp, "\"version\":\"0.1.0\"") < 0 { return Err("proof_mcp_initialize: missing serverInfo version"); }
+    if str_index_of(resp, "\"version\":\"0.0.3\"") < 0 { return Err("proof_mcp_initialize: missing serverInfo version"); }
     if str_index_of(resp, "\"tools\"") < 0 { return Err("proof_mcp_initialize: missing tools capability"); }
     return Ok(0);
 }

@@ -15,7 +15,7 @@ The repository topology follows RFC 0005:
 
 - `ANCHOR.oo`: Root front door re-exporting all subdirectories.
 - `README.md`: Architecture map, logline, and polyrepo table.
-- `VERSION`: Module version string (0.1.0).
+- `VERSION`: Module version string (0.0.3).
 - `record/`: Telemetry schemas, flight event records, and ring buffer.
 - `autopsy/`: Autopsy parser, failure locator, root cause classifier, and report formatter.
 - `diff/`: AST semantic diffing engine and compiler stage runner.
