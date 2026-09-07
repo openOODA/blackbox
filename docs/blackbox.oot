@@ -21,8 +21,9 @@ The repository topology follows RFC 0005:
 - `diff/`: AST semantic diffing engine and compiler stage runner.
 - `bridge/`: Subprocess runner, directory watcher, and MCP bridge bindings.
 - `cli/`: Command line interface dispatching autopsy, diff, and trace.
-- `qa/`: Hostile crash fixtures and double-run invariant verification proofs.
-- `scripts/`: Build, test, and verification automation.
+- `qa/`: Hostile crash fixtures, double-run invariant verification proofs,
+  and the unified suite runner (`qa/suite.oo`, built by CI).
+- `.github/workflows/ci.yml`: Build, test, and release entry point.
 - `docs/`: Technical specification in ASD-STE100 English.
 
 ## 3. Flight Telemetry Schemas

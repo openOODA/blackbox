@@ -8,7 +8,7 @@ This upgrade adds agent-native Blue Ocean capabilities across the existing 5 sub
 3. `bridge/`: Real-Time Crash Sentinel Daemon (`bridge/dir_watcher.oo`) monitoring target directories for `.blackbox/autopsy.json` and `.blackbox/flight.json`, detecting creation/modification, and automatically triggering autopsy diagnosis and emitting 1-turn patch recipes.
 4. `cli/`: Extended CLI dispatch in `cli/cli_run.oo` (and modular helper `cli/cli_capsule.oo`) routing `heal`, `pack`, `replay`, and `watch` with strict capability bitmask enforcement.
 5. `qa/`: Multi-tier verification suites (`qa/heal_proof.oo`, `qa/capsule_proof.oo`, `qa/watch_proof.oo`, `qa/e2e_blue_ocean_proof.oo`) enforcing `Run_1 == Run_2` determinism proofs.
-6. `scripts/`: Master test runner (`scripts/test.oo`), surface verifier (`scripts/verify_surface.oo`), and verification gate (`scripts/verify.oo`).
+6. `qa/`: Master test runner (`qa/suite.oo`) and surface verifier (`qa/verify_surface.oo`); CI is the entry point (no `scripts/` runners).
 
 ## Feature Inventory
 | # | Feature | Description | Milestone | Source |

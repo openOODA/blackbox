@@ -28,8 +28,7 @@ blackbox/
 ├── diff/            AST pass diffing and compiler stage comparator
 ├── bridge/          Process execution under ProcessCap and MCP bridge
 ├── cli/             Command line interface (autopsy, diff, trace)
-├── qa/              Crash test fixtures and double-run invariant proofs
-├── scripts/         Build, test, and verification automation
+├── qa/              Crash test fixtures, double-run proofs, suite runner
 └── docs/            Subsystem specification in ASD-STE100
 ```
 

@@ -48,10 +48,8 @@ jobs:
           OODA_FS_READDIR: ${{ github.workspace }}
           OODA_FS_WRITEDIR: ${{ github.workspace }}
         run: |
-          "${OODA_COMPILER}" build blackbox/scripts/verify.oo -o /tmp/bb_verify
-          /tmp/bb_verify
-          "${OODA_COMPILER}" build blackbox/scripts/test.oo -o /tmp/bb_test
-          /tmp/bb_test
+          "${OODA_COMPILER}" build blackbox/qa/suite.oo -o /tmp/bb_suite
+          /tmp/bb_suite
 
   build:
     runs-on: ubuntu-latest

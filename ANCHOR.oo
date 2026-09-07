@@ -10,9 +10,11 @@
 //   3. diff/ provides compiler stage invocation and semantic AST diffing.
 //   4. bridge/ provides ProcessCap process runners, directory watchers, and MCP bindings.
 //   5. cli/ provides command line dispatch for autopsy, diff, and trace.
-//   6. qa/ provides crash verification proofs and double-run determinism tests.
-//   7. scripts/ provides build, test, and surface verification automation.
-//   8. docs/ provides ASD-STE100 subsystem specification.
+//   6. qa/ provides crash verification proofs, double-run determinism
+//      tests, and the unified suite runner (CI builds qa/suite.oo).
+//   7. docs/ provides ASD-STE100 subsystem specification.
+//   8. .github/workflows/ci.yml is the build, test, and release entry
+//      point (gh-owned; no scripts/ runners).
 
 import "record/ANCHOR.oo";
 import "autopsy/ANCHOR.oo";
@@ -20,7 +22,6 @@ import "diff/ANCHOR.oo";
 import "bridge/ANCHOR.oo";
 import "cli/ANCHOR.oo";
 import "qa/ANCHOR.oo";
-import "scripts/ANCHOR.oo";
 import "docs/ANCHOR.oo";
 
 pub fn blackbox_version() -> String {

@@ -9,8 +9,10 @@
 //   2. Re-export crash fixture verification proofs.
 //   3. Re-export double-run determinism invariant proofs.
 //   4. Re-export MCP diagnostic server integration proofs.
+//   5. suite.oo runs the unified suite (CI entry; covers surface too).
 
 import "crash_fixtures.oo";
 import "crash_fixture_proof.oo";
 import "double_run_proof.oo";
 import "mcp_proof.oo";
+import "suite.oo";
