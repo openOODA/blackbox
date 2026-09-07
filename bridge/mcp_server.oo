@@ -189,7 +189,7 @@ pub fn mcp_server_run_stdio(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env
             continue;
         }
         if bytes_len(buf) > 1048576 { return Err("input exceeds 1MiB"); }
-        let r: Result[String, String] = oo_read_stdin_chunk(fs, 100);
+        let r: Result[String, String] = oo_read_stdin_chunk(100);
         if r.is_err() { idle = idle + 1; if idle > 3000 { return Ok(0); } continue; }
         let chunk: String = match r { Ok(s) => s, Err(_) => "" };
         if chars_len(chunk) == 0 { idle = idle + 1; if idle > 3000 { return Ok(0); } } else { buf = buf + chunk; idle = 0; }
