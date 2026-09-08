@@ -34,9 +34,18 @@ blackbox/
 
 ## Purpose
 
-The `blackbox` CLI reads crash autopsy JSON and dumps live `oodac tokens` output.
-This repo does not write `.blackbox/autopsy.json` or a flight log; autopsy is fixture-driven.
-`diff` locates the compiler from `OODA_COMPILER` or `OODAC_BIN` (no PATH hunt) and runs `tokens`.
+The `blackbox` CLI reads crash autopsy JSON, dumps live `oodac tokens` output,
+auto-records bounded flight capsules for failing spawned processes, heals
+sources from autopsy coordinates, and gates CI on token-dump drift.
+`run --record <capsule> -- <cmd> [args]` spawns a child under `ProcessCap`
+(`sys_exec` captures stdout+stderr, 16MiB bound) and, only on failure, persists
+a bounded capsule (command, exit status, truncated output, single overwrite per
+path) to the explicit path; successes write nothing.
+`diff` locates the compiler from `OODA_COMPILER` or `OODAC_BIN` (no PATH hunt),
+runs `tokens`, and exits nonzero when two-file token dumps drift.
+`heal [path] [--json]` parses autopsy, applies the patch guard under
+`FsWriteCap`, validates via `oodac check`, rolls back on failure, and prints
+machine-readable `{"ok":...}` with `--json`.
 `inspect` runs live `tokens`, `check`, `emit-c`, or `build` and prints the child text, including gcc diagnostics.
 `trace` prints `.blackbox/flight.json` when that file exists and is non-empty; otherwise it prints `ERR`.
 
@@ -46,8 +55,17 @@ This repo does not write `.blackbox/autopsy.json` or a flight log; autopsy is fi
 # Parse autopsy JSON and output 1-turn agent diagnosis
 blackbox autopsy path/to/autopsy.json
 
+# Run a child; on failure persist a bounded flight capsule (exit nonzero)
+blackbox run --record flight-fail.json -- "$OODA_COMPILER" check path/to/file.oo
+
+# Heal a source defect from autopsy coordinates (machine-readable with --json)
+blackbox heal path/to/autopsy.json --json
+
 # Run oodac tokens on a file (requires OODA_COMPILER or OODAC_BIN)
 blackbox diff path/to/file.oo
+
+# Compare two files; exits nonzero when token dumps drift (CI gate)
+blackbox diff path/to/before.oo path/to/after.oo
 
 # Run a live oodac stage (tokens, check, emit-c, or build)
 blackbox inspect check path/to/file.oo

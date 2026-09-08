@@ -1,0 +1,151 @@
+// # Single-Command Heal JSON Proofs
+//
+// Logline: Proves blackbox heal emits machine-readable ok/output and rolls back.
+//
+// Setup: ProcessCap, FsReadCap, FsWriteCap, EnvCap. Scratch target plus JSON fixture.
+//
+// Beats:
+//   1. Pure JSON formatter emits ok/status and escapes quotes.
+//   2. CLI heal --json heals the target and reports ok true.
+//   3. Idempotent re-heal reports ALREADY_HEALED with ok true.
+//   4. Out-of-bounds coordinates fail with ok false and no mutation.
+//   5. Traversal, missing, and unknown-flag inputs fail closed.
+//   6. Plain heal path still prints the human-readable report.
+
+import "autopsy/self_heal.oo";
+import "cli/cli_heal.oo";
+
+fn hjson_pfx(fs: &FsReadCap) -> String {
+    if path_exists(fs, "blackbox/qa/diff_sample.oo") { return "blackbox/qa/"; }
+    return "qa/";
+}
+
+fn hjson_target_content() -> String {
+    let mut s: String = "// # Heal JSON Scratch\n// Logline: Scratch file for heal json proof.\n";
+    s = s + "// Setup: Target for testing patch insertion.\n// Beats:\n//   1. Function body.\n\n";
+    s = s + "pub fn hjson_target(ptr: Int) -> Result[Int, String] {\n    let x: Int = ptr + 1;\n    return Ok(x);\n}\n";
+    return s;
+}
+
+fn hjson_make_json(target: String, coord_suffix: String) -> String {
+    let mut j: String = "{\n  \"schema_version\": \"1.0.0\",\n  \"crash_signal\": 11,\n  \"signal_name\": \"SIGSEGV\",\n";
+    j = j + "  \"failure_coordinate\": \"" + target + coord_suffix + "\",\n  \"root_cause\": \"NULL_POINTER_DEREFERENCE\",\n";
+    j = j + "  \"remediation\": \"Add guard `if ptr == 0 { return Err(\\\"null pointer dereference\\\"); }` at " + target + ":8:5\"\n}";
+    return j;
+}
+
+fn proof_hjson_format() -> Result[Int, String] {
+    let ok_j: String = heal_format_json(true, "HEALED", "f.oo:8:5", "if ptr == 0 { return Err(\"x\"); }", "NULL_POINTER_DEREFERENCE", "");
+    if str_index_of(ok_j, "{\"ok\":true") < 0 { return Err("proof_hjson_format: ok true prefix missing"); }
+    if str_index_of(ok_j, "\"status\":\"HEALED\"") < 0 { return Err("proof_hjson_format: status missing"); }
+    if str_index_of(ok_j, "if ptr == 0 { return Err(\\\"x\\\"); }") < 0 { return Err("proof_hjson_format: guard not escaped"); }
+    let err_j: String = heal_format_json(false, "", "", "", "", "bad \"quote\"");
+    if str_index_of(err_j, "{\"ok\":false") < 0 { return Err("proof_hjson_format: ok false prefix missing"); }
+    if str_index_of(err_j, "bad \\\"quote\\\"") < 0 { return Err("proof_hjson_format: error not escaped"); }
+    let idle_j: String = heal_format_json(true, "ALREADY_HEALED", "f.oo:8:5", "g", "NULL_POINTER_DEREFERENCE", "");
+    if str_index_of(idle_j, "\"status\":\"ALREADY_HEALED\"") < 0 { return Err("proof_hjson_format: idle status missing"); }
+    return Ok(0);
+}
+
+fn hjson_heal_args(jpath: String, extra: String) -> List[String] {
+    let mut a: List[String] = list_new();
+    a = list_push(a, "heal");
+    a = list_push(a, jpath);
+    if chars_len(extra) > 0 { a = list_push(a, extra); }
+    return a;
+}
+
+fn proof_hjson_heal_ok(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap) -> Result[Int, String] {
+    let pfx: String = hjson_pfx(fs);
+    let target: String = pfx + "hjson_scratch.oo";
+    let jpath: String = pfx + "hjson_case.json";
+    let _w: Result[Void, String] = write_file(fw, target, hjson_target_content());
+    let _wj: Result[Void, String] = write_file(fw, jpath, hjson_make_json(target, ":8:5:hjson_target"));
+    let r: Result[Int, String] = cli_run_heal_args(p, fs, fw, env, hjson_heal_args(jpath, "--json"));
+    if r.is_err() {
+        let e: String = match r { Ok(_) => "", Err(m) => m };
+        return Err("proof_hjson_heal_ok: heal --json failed: " + e);
+    }
+    let rd: Result[String, String] = read_file(fs, target);
+    if rd.is_err() { return Err("proof_hjson_heal_ok: read target failed"); }
+    let patched: String = match rd { Ok(s) => s, Err(_) => "" };
+    if str_index_of(patched, "    if ptr == 0 { return Err(\"null pointer dereference\"); }") < 0 {
+        return Err("proof_hjson_heal_ok: guard missing after --json heal");
+    }
+    let r2: Result[Int, String] = cli_run_heal_args(p, fs, fw, env, hjson_heal_args(jpath, "--json"));
+    if r2.is_err() { return Err("proof_hjson_heal_ok: idempotent --json heal failed"); }
+    let rd2: Result[String, String] = read_file(fs, target);
+    let after: String = match rd2 { Ok(s) => s, Err(_) => "" };
+    if patched != after { return Err("proof_hjson_heal_ok: idempotent run mutated file"); }
+    let _c1: Result[Void, String] = oo_fs_remove_file(fw, jpath);
+    let _c2: Result[Void, String] = oo_fs_remove_file(fw, target);
+    return Ok(0);
+}
+
+fn proof_hjson_heal_fail(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap) -> Result[Int, String] {
+    let pfx: String = hjson_pfx(fs);
+    let target: String = pfx + "hjson_fail.oo";
+    let jpath: String = pfx + "hjson_fail.json";
+    let init_text: String = hjson_target_content();
+    let _w: Result[Void, String] = write_file(fw, target, init_text);
+    let _wj: Result[Void, String] = write_file(fw, jpath, hjson_make_json(target, ":9999:1:hjson_target"));
+    let r: Result[Int, String] = cli_run_heal_args(p, fs, fw, env, hjson_heal_args(jpath, "--json"));
+    if r.is_ok() { return Err("proof_hjson_heal_fail: oob must fail"); }
+    let rd: Result[String, String] = read_file(fs, target);
+    let after: String = match rd { Ok(s) => s, Err(_) => "" };
+    if after != init_text { return Err("proof_hjson_heal_fail: failed heal mutated file"); }
+    let mut trav: List[String] = list_new();
+    trav = list_push(trav, "heal");
+    trav = list_push(trav, "../escaped.json");
+    trav = list_push(trav, "--json");
+    let rt: Result[Int, String] = cli_run_heal_args(p, fs, fw, env, trav);
+    if rt.is_ok() { return Err("proof_hjson_heal_fail: traversal must fail"); }
+    let mut miss: List[String] = list_new();
+    miss = list_push(miss, "heal");
+    miss = list_push(miss, pfx + "hjson_missing.json");
+    miss = list_push(miss, "--json");
+    let rm: Result[Int, String] = cli_run_heal_args(p, fs, fw, env, miss);
+    if rm.is_ok() { return Err("proof_hjson_heal_fail: missing file must fail"); }
+    let mut bad: List[String] = list_new();
+    bad = list_push(bad, "heal");
+    bad = list_push(bad, "--bogus");
+    let rb: Result[Int, String] = cli_run_heal_args(p, fs, fw, env, bad);
+    if rb.is_ok() { return Err("proof_hjson_heal_fail: unknown flag must fail"); }
+    let _c1: Result[Void, String] = oo_fs_remove_file(fw, jpath);
+    let _c2: Result[Void, String] = oo_fs_remove_file(fw, target);
+    return Ok(0);
+}
+
+fn proof_hjson_plain(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap) -> Result[Int, String] {
+    let pfx: String = hjson_pfx(fs);
+    let target: String = pfx + "hjson_plain.oo";
+    let jpath: String = pfx + "hjson_plain.json";
+    let _w: Result[Void, String] = write_file(fw, target, hjson_target_content());
+    let _wj: Result[Void, String] = write_file(fw, jpath, hjson_make_json(target, ":8:5:hjson_target"));
+    let r: Result[Int, String] = cli_run_heal_args(p, fs, fw, env, hjson_heal_args(jpath, ""));
+    if r.is_err() {
+        let e: String = match r { Ok(_) => "", Err(m) => m };
+        return Err("proof_hjson_plain: plain heal failed: " + e);
+    }
+    let rd: Result[String, String] = read_file(fs, target);
+    let patched: String = match rd { Ok(s) => s, Err(_) => "" };
+    if str_index_of(patched, "    if ptr == 0 { return Err(\"null pointer dereference\"); }") < 0 {
+        return Err("proof_hjson_plain: guard missing after plain heal");
+    }
+    let _c1: Result[Void, String] = oo_fs_remove_file(fw, jpath);
+    let _c2: Result[Void, String] = oo_fs_remove_file(fw, target);
+    return Ok(0);
+}
+
+pub fn heal_json_proof_run(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap) -> Result[Int, String] {
+    let r1: Result[Int, String] = proof_hjson_format();
+    if r1.is_err() { return r1; }
+    let r2: Result[Int, String] = proof_hjson_heal_ok(p, fs, fw, env);
+    if r2.is_err() { return r2; }
+    let r3: Result[Int, String] = proof_hjson_heal_fail(p, fs, fw, env);
+    if r3.is_err() { return r3; }
+    let r4: Result[Int, String] = proof_hjson_plain(p, fs, fw, env);
+    if r4.is_err() { return r4; }
+    return Ok(0);
+}
+

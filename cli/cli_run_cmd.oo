@@ -1,0 +1,61 @@
+// # Blackbox CLI Run-and-Record Subcommand
+//
+// Logline: Runs a child under ProcessCap and auto-persists a bounded flight capsule on failure.
+//
+// Setup: ProcessCap, FsWriteCap. Grammar: run --record <path> [--] <cmd> [args, max 3].
+//
+// Beats:
+//   1. Parse --record path and command argv fail-closed.
+//   2. Spawn via process_run_recorded with fixed arities.
+//   3. Print child output and capsule path; nonzero exit on failure.
+
+import "bridge/process_runner.oo";
+
+fn cli_run_cmd_err(msg: String) -> Result[Int, String] {
+    println("ERR " + msg);
+    return Err(msg);
+}
+
+pub fn cli_run_record_cmd(p: &ProcessCap, fw: &FsWriteCap, args: List[String]) -> Result[Int, String] {
+    let n: Int = list_len(args);
+    let mut i: Int = 0;
+    if n > 0 && list_get(args, 0) == "run" { i = 1; }
+    let mut rec_path: String = "";
+    let mut cmd: String = "";
+    let mut a1: String = "";
+    let mut a2: String = "";
+    let mut a3: String = "";
+    let mut npos: Int = 0;
+    while i < n {
+        let a: String = list_get(args, i);
+        if a == "--record" {
+            if i + 1 >= n { return cli_run_cmd_err("missing argument for --record"); }
+            i = i + 1;
+            rec_path = list_get(args, i);
+        } else if a == "--" {
+            let _is_sep: Bool = true;
+        } else if str_starts_with(a, "--") {
+            return cli_run_cmd_err("unknown run flag: " + a);
+        } else {
+            if npos == 0 { cmd = a; }
+            else if npos == 1 { a1 = a; }
+            else if npos == 2 { a2 = a; }
+            else if npos == 3 { a3 = a; }
+            else { return cli_run_cmd_err("too many command args (max 3 after command)"); }
+            npos = npos + 1;
+        }
+        i = i + 1;
+    }
+    if chars_len(rec_path) == 0 { return cli_run_cmd_err("missing --record <capsule path>"); }
+    if chars_len(cmd) == 0 { return cli_run_cmd_err("missing command to run"); }
+    let r: Result[String, String] = process_run_recorded(p, fw, cmd, a1, a2, a3, rec_path);
+    if r.is_ok() {
+        let text: String = match r { Ok(s) => s, Err(_) => "" };
+        if chars_len(text) > 0 { println(text); }
+        return Ok(0);
+    }
+    let errt: String = match r { Ok(_) => "", Err(m) => m };
+    if chars_len(errt) > 0 { println(errt); }
+    println("RECORDED flight capsule: " + rec_path);
+    return cli_run_cmd_err("child failed; flight capsule recorded: " + rec_path);
+}

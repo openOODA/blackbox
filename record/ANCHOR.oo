@@ -10,6 +10,7 @@
 //   3. Re-export circular ring buffer and dual ring buffer management.
 //   4. Re-export persistent flight log flush and stream formatting.
 //   5. Re-export portable flight capsule packing, unpacking, and CRC-32.
+//   6. Re-export bounded failed-flight capsule recording.
 
 import "telemetry_schema.oo";
 import "event_record.oo";
@@ -17,4 +18,5 @@ import "ring_buffer.oo";
 import "flight_log.oo";
 import "flight_capsule.oo";
 import "flight_replay.oo";
+import "flight_record.oo";
 import "crypto_agile.oo";

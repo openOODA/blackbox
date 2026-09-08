@@ -9,6 +9,7 @@
 //   2. Compare lines across two dumps.
 //   3. Format added and removed lines.
 //   4. Invoke compiler_run_tokens on file targets.
+//   5. Gate CI on raw token equality; nonzero Err on drift.
 
 import "compiler_runner.oo";
 import "em_diff.oo";
@@ -96,6 +97,31 @@ pub fn ast_diff_compare_files(p: &ProcessCap, bin: String, file_b: String, file_
     let ra: Result[String, String] = compiler_run_tokens(p, bin, file_a);
     let atxt: String = match ra { Ok(s) => s, Err(e) => return Err(e); };
     return Ok(ast_diff_compare_texts(btxt, atxt));
+}
+
+pub fn ast_diff_has_drift(report: String) -> Bool {
+    if chars_len(report) == 0 { return true; }
+    return str_index_of(report, "Status: Identical") < 0;
+}
+
+pub fn ast_diff_gate(p: &ProcessCap, bin: String, file_before: String, file_after: String) -> Result[Int, String] {
+    if chars_len(file_before) == 0 || chars_len(file_after) == 0 {
+        return Err("ast_diff_gate: empty file path");
+    }
+    if str_index_of(file_before, "..") >= 0 || str_index_of(file_after, "..") >= 0 {
+        return Err("ast_diff_gate: path traversal rejected");
+    }
+    if chars_len(bin) == 0 || !compiler_path_ok(bin) {
+        return Err("ast_diff_gate: compiler path refused");
+    }
+    let rb: Result[String, String] = compiler_run_tokens(p, bin, file_before);
+    let btxt: String = match rb { Ok(s) => s, Err(e) => return Err(e); };
+    let ra: Result[String, String] = compiler_run_tokens(p, bin, file_after);
+    let atxt: String = match ra { Ok(s) => s, Err(e) => return Err(e); };
+    if btxt == atxt {
+        return Ok(0);
+    }
+    return Err("token drift detected: " + file_before + " != " + file_after);
 }
 
 pub fn ast_diff_inspect_file(p: &ProcessCap, bin: String, file: String) -> Result[String, String] {

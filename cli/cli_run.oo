@@ -5,10 +5,11 @@
 // Setup: ProcessCap, FsReadCap, FsWriteCap, EnvCap. Compiler from env.
 //
 // Beats:
-//   1. Print usage that lists autopsy|diff|inspect|trace|mcp|heal|pack|replay|watch.
+//   1. Print usage that lists autopsy|diff|inspect|trace|mcp|heal|pack|replay|watch|run.
 //   2. Autopsy reads JSON under FsReadCap and prints a diagnosis.
-//   3. Diff locates oodac and runs tokens.
+//   3. Diff locates oodac, runs tokens, and exits nonzero on drift.
 //   4. Trace reads flight log; mcp runs standalone stdio server.
+//   5. Heal and run delegate to cli_heal and cli_run_cmd helpers.
 
 import "autopsy/report_formatter.oo";
 import "autopsy/self_heal.oo";
@@ -20,9 +21,11 @@ import "record/flight_log.oo";
 import "cli_inspect.oo";
 import "cli_capsule.oo";
 import "cli_watch.oo";
+import "cli_heal.oo";
+import "cli_run_cmd.oo";
 
 pub fn cli_help() -> String {
-    let mut out: String = "Usage: blackbox autopsy|diff|inspect|trace|mcp|heal|pack|replay|watch [args...]\n\n";
+    let mut out: String = "Usage: blackbox autopsy|diff|inspect|trace|mcp|heal|pack|replay|watch|run [args...]\n\n";
     out = out + "Subcommands:\n";
     out = out + "  autopsy [path] [--compact]     Parse autopsy JSON and print a 1-turn diagnosis\n";
     out = out + "  diff <file.oo>                 Run oodac tokens (OODA_COMPILER or OODAC_BIN)\n";
@@ -31,7 +34,9 @@ pub fn cli_help() -> String {
     out = out + "                                 Run a live oodac stage and print child text\n";
     out = out + "  trace                          Print a written flight log if one exists\n";
     out = out + "  mcp --stdio                    Start standalone JSON-RPC 2.0 MCP server\n";
-    out = out + "  heal [path]                    Heal source defect from autopsy coordinates\n";
+    out = out + "  heal [path] [--json]           Heal source defect from autopsy coordinates\n";
+    out = out + "  run --record <capsule> [--] <cmd> [args]\n";
+    out = out + "                                 Run child; persist bounded flight capsule on failure\n";
     out = out + "  pack [file.bb] [autopsy.json] [flight.json] [--sign <algo>] [--key <seed>]\n";
     out = out + "                                 Bundle flight telemetry into signed .bb (crc32, sha256, blake3, sha3, sha512, ed25519)\n";
     out = out + "  replay <file.bb> [--verify]    Verify integrity and reconstruct crash diagnosis\n";
@@ -91,6 +96,9 @@ pub fn cli_run_diff(p: &ProcessCap, fs: &FsReadCap, env: &EnvCap, file1: String,
         }
         let text: String = match cmp { Ok(s) => s, Err(_) => "" };
         println(text);
+        if ast_diff_has_drift(text) {
+            return cli_err("token drift detected: " + file1 + " != " + file2);
+        }
         return Ok(0);
     }
     let insp: Result[String, String] = ast_diff_inspect_file(p, bin, file1);
@@ -171,8 +179,10 @@ pub fn cli_dispatch(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCa
     let subcmd: String = list_get(args, 0);
 
     if subcmd == "heal" {
-        let pth: String = if n > 1 { list_get(args, 1) } else { "" };
-        return cli_run_heal(p, fs, fw, env, pth);
+        return cli_run_heal_args(p, fs, fw, env, args);
+    }
+    if subcmd == "run" {
+        return cli_run_record_cmd(p, fw, args);
     }
     if subcmd == "pack" {
         return cli_run_pack(fs, fw, args);

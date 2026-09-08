@@ -9,6 +9,9 @@
 //   2. Spawn child process via sys_exec.
 //   3. Capture standard output, error output, and exit status.
 //   4. Detect abnormal process termination and trigger autopsy workflow.
+//   5. Persist a bounded flight capsule on failure; write nothing on success.
+
+import "record/flight_record.oo";
 
 pub fn process_run_cmd(p: &ProcessCap, cmd: String, arg1: String, arg2: String) -> Result[String, String] {
     if chars_len(cmd) == 0 {
@@ -24,4 +27,48 @@ pub fn process_trace_execution(p: &ProcessCap, cmd: String, arg1: String) -> Res
     }
     let r: Result[String, String] = sys_exec(p, cmd, arg1);
     return r;
+}
+
+pub fn process_run_recorded(p: &ProcessCap, fw: &FsWriteCap, cmd: String, arg1: String, arg2: String, arg3: String, out_path: String) -> Result[String, String] {
+    if chars_len(cmd) == 0 {
+        return Err("process_run_recorded: empty command");
+    }
+    if chars_len(out_path) == 0 {
+        return Err("process_run_recorded: empty capsule path");
+    }
+    if str_index_of(out_path, "..") >= 0 {
+        return Err("process_run_recorded: path traversal rejected");
+    }
+    let has1: Bool = chars_len(arg1) > 0;
+    let has2: Bool = chars_len(arg2) > 0;
+    let has3: Bool = chars_len(arg3) > 0;
+    if has3 && (!has1 || !has2) {
+        return Err("process_run_recorded: arg gap rejected");
+    }
+    if has2 && !has1 {
+        return Err("process_run_recorded: arg gap rejected");
+    }
+    let r: Result[String, String] = if has3 {
+        sys_exec(p, cmd, arg1, arg2, arg3)
+    } else if has2 {
+        sys_exec(p, cmd, arg1, arg2)
+    } else if has1 {
+        sys_exec(p, cmd, arg1)
+    } else {
+        sys_exec(p, cmd)
+    };
+    if r.is_ok() {
+        return r;
+    }
+    let captured: String = match r { Ok(_) => "", Err(m) => m };
+    let mut full_cmd: String = cmd;
+    if has1 { full_cmd = full_cmd + " " + arg1; }
+    if has2 { full_cmd = full_cmd + " " + arg2; }
+    if has3 { full_cmd = full_cmd + " " + arg3; }
+    let rec: Result[Int, String] = flight_record_failure(fw, out_path, full_cmd, 1, captured);
+    if rec.is_err() {
+        let e: String = match rec { Ok(_) => "", Err(m) => m };
+        return Err(captured + "\nflight record failed: " + e);
+    }
+    return Err(captured);
 }

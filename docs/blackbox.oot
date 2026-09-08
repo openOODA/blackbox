@@ -5,8 +5,13 @@ File: blackbox/docs/blackbox.oot
 
 This document specifies the openOODA blackbox subsystem.
 The autopsy engine reads autopsy JSON and outputs a one-turn diagnostic report.
-This repository does not write `.blackbox/autopsy.json`; callers supply a fixture or a later runtime dump.
-The diff engine runs `oodac tokens` on source files.
+Failing spawned processes auto-persist a bounded flight capsule (command, exit
+status, truncated captured output) to an explicit path via `blackbox run
+--record <capsule> -- <cmd> [args]`; succeeding processes write nothing.
+The heal command applies an autopsy patch guard under `FsWriteCap`, validates
+with `oodac check`, rolls back on failure, and reports `{"ok":...}` JSON.
+The diff engine runs `oodac tokens` on source files and exits nonzero when a
+two-file token-dump comparison drifts, so CI and agents can gate on it.
 The trace command prints a written `.blackbox/flight.json` or fails closed.
 
 ## 2. Directory Architecture

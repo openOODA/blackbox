@@ -1,0 +1,194 @@
+// # Failed-Flight Auto-Record Proofs
+//
+// Logline: Proves failing spawns persist bounded capsules and successes write nothing.
+//
+// Setup: ProcessCap, FsReadCap, FsWriteCap, EnvCap. Compiler child via OODA_COMPILER.
+//
+// Beats:
+//   1. Failing child persists capsule with command, status, and captured output.
+//   2. Succeeding child persists no capsule file.
+//   3. Oversized output is truncated with the truncated flag set.
+//   4. Empty, traversal, and gap inputs fail closed without spawning.
+//   5. CLI run wiring records on failure and passes through on success.
+//   6. Capsule bytes are deterministic across identical failing runs.
+
+import "record/flight_record.oo";
+import "bridge/process_runner.oo";
+import "diff/compiler_runner.oo";
+import "autopsy/autopsy_json.oo";
+import "cli/cli_run_cmd.oo";
+
+fn frec_pfx(fs: &FsReadCap) -> String {
+    if path_exists(fs, "blackbox/qa/diff_sample.oo") { return "blackbox/qa/"; }
+    return "qa/";
+}
+
+fn frec_sample(fs: &FsReadCap) -> String {
+    return frec_pfx(fs) + "diff_sample.oo";
+}
+
+fn frec_bad_content() -> String {
+    return "pub fn rec_bad_target( -> Int {\n    return 1;\n}\n";
+}
+
+fn proof_record_failure_capsule(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap) -> Result[Int, String] {
+    let loc: Result[String, String] = compiler_locate(fs, env);
+    if loc.is_err() {
+        let e: String = match loc { Ok(_) => "", Err(m) => m };
+        return Err("proof_record_failure_capsule: locate failed: " + e);
+    }
+    let bin: String = match loc { Ok(s) => s, Err(_) => "" };
+    let pfx: String = frec_pfx(fs);
+    let bad_path: String = pfx + "rec_bad_scratch.oo";
+    let cap: String = pfx + "rec_fail_capsule.json";
+    let _wb: Result[Void, String] = write_file(fw, bad_path, frec_bad_content());
+    let _rm: Result[Void, String] = oo_fs_remove_file(fw, cap);
+    let r: Result[String, String] = process_run_recorded(p, fw, bin, "check", bad_path, "", cap);
+    if r.is_ok() { return Err("proof_record_failure_capsule: bad check must fail"); }
+    if !path_exists(fs, cap) { return Err("proof_record_failure_capsule: capsule missing after failure"); }
+    let rd: Result[String, String] = read_file(fs, cap);
+    if rd.is_err() { return Err("proof_record_failure_capsule: read capsule failed"); }
+    let body: String = match rd { Ok(s) => s, Err(_) => "" };
+    if str_index_of(body, bin) < 0 { return Err("proof_record_failure_capsule: command missing"); }
+    if str_index_of(body, "\"exit_status\": 1") < 0 { return Err("proof_record_failure_capsule: status missing"); }
+    if str_index_of(body, "\"kind\": \"flight-capsule\"") < 0 { return Err("proof_record_failure_capsule: kind missing"); }
+    if str_index_of(body, "ERR") < 0 { return Err("proof_record_failure_capsule: captured output missing"); }
+    if autopsy_json_int(body, "output_bytes") <= 0 { return Err("proof_record_failure_capsule: output_bytes not positive"); }
+    let cap2: String = pfx + "rec_fail_capsule2.json";
+    let _rm2: Result[Void, String] = oo_fs_remove_file(fw, cap2);
+    let r2: Result[String, String] = process_run_recorded(p, fw, bin, "check", bad_path, "", cap2);
+    if r2.is_ok() { return Err("proof_record_failure_capsule: second bad check must fail"); }
+    let rd1: Result[String, String] = read_file(fs, cap);
+    let rd2: Result[String, String] = read_file(fs, cap2);
+    let c1: String = match rd1 { Ok(s) => s, Err(_) => "" };
+    let c2: String = match rd2 { Ok(s) => s, Err(_) => "" };
+    if c1 != c2 { return Err("proof_record_failure_capsule: Run_1 != Run_2 bytes"); }
+    let _c1: Result[Void, String] = oo_fs_remove_file(fw, cap);
+    let _c2: Result[Void, String] = oo_fs_remove_file(fw, cap2);
+    let _cb: Result[Void, String] = oo_fs_remove_file(fw, bad_path);
+    return Ok(0);
+}
+
+fn proof_record_success_writes_nothing(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap) -> Result[Int, String] {
+    let loc: Result[String, String] = compiler_locate(fs, env);
+    if loc.is_err() { return Err("proof_record_success: locate failed"); }
+    let bin: String = match loc { Ok(s) => s, Err(_) => "" };
+    let cap: String = frec_pfx(fs) + "rec_ok_capsule.json";
+    let _rm: Result[Void, String] = oo_fs_remove_file(fw, cap);
+    let r: Result[String, String] = process_run_recorded(p, fw, bin, "check", frec_sample(fs), "", cap);
+    if r.is_err() {
+        let e: String = match r { Ok(_) => "", Err(m) => m };
+        return Err("proof_record_success: good check must pass: " + e);
+    }
+    if path_exists(fs, cap) { return Err("proof_record_success: success must not write capsule"); }
+    return Ok(0);
+}
+
+fn proof_record_bounds(fs: &FsReadCap, fw: &FsWriteCap) -> Result[Int, String] {
+    let pfx: String = frec_pfx(fs);
+    let mut big: String = "";
+    let mut k: Int = 0;
+    while k < 20000 {
+        big = big + "abcde";
+        k = k + 1;
+    }
+    if chars_len(big) != 100000 { return Err("proof_record_bounds: fixture not 100000 chars"); }
+    let cap: String = pfx + "rec_big_capsule.json";
+    let _rm: Result[Void, String] = oo_fs_remove_file(fw, cap);
+    let r: Result[Int, String] = flight_record_failure(fw, cap, "bincmd check", 1, big);
+    if r.is_err() { return Err("proof_record_bounds: write failed"); }
+    let rd: Result[String, String] = read_file(fs, cap);
+    if rd.is_err() { return Err("proof_record_bounds: read failed"); }
+    let body: String = match rd { Ok(s) => s, Err(_) => "" };
+    if chars_len(body) >= 70000 { return Err("proof_record_bounds: capsule not bounded"); }
+    if str_index_of(body, "\"truncated\": true") < 0 { return Err("proof_record_bounds: truncated flag missing"); }
+    if autopsy_json_int(body, "output_bytes") != 100000 { return Err("proof_record_bounds: output_bytes wrong"); }
+    let small_cap: String = pfx + "rec_small_capsule.json";
+    let _rm2: Result[Void, String] = oo_fs_remove_file(fw, small_cap);
+    let r2: Result[Int, String] = flight_record_failure(fw, small_cap, "bincmd check", 1, "short ERR");
+    if r2.is_err() { return Err("proof_record_bounds: small write failed"); }
+    let rd2: Result[String, String] = read_file(fs, small_cap);
+    let small_body: String = match rd2 { Ok(s) => s, Err(_) => "" };
+    if str_index_of(small_body, "\"truncated\": false") < 0 { return Err("proof_record_bounds: small must not truncate"); }
+    if str_index_of(small_body, "short ERR") < 0 { return Err("proof_record_bounds: small output missing"); }
+    let _c1: Result[Void, String] = oo_fs_remove_file(fw, cap);
+    let _c2: Result[Void, String] = oo_fs_remove_file(fw, small_cap);
+    return Ok(0);
+}
+
+fn proof_record_fail_closed(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap) -> Result[Int, String] {
+    let r1: Result[String, String] = process_run_recorded(p, fw, "", "check", "x.oo", "", frec_pfx(fs) + "rec_never.json");
+    if r1.is_ok() { return Err("proof_record_fail_closed: empty cmd must fail"); }
+    let r2: Result[String, String] = process_run_recorded(p, fw, "somecmd", "", "", "", "");
+    if r2.is_ok() { return Err("proof_record_fail_closed: empty path must fail"); }
+    let r3: Result[String, String] = process_run_recorded(p, fw, "somecmd", "", "", "", "../evil.json");
+    if r3.is_ok() { return Err("proof_record_fail_closed: traversal must fail"); }
+    let r4: Result[String, String] = process_run_recorded(p, fw, "somecmd", "", "late", "", frec_pfx(fs) + "rec_never.json");
+    if r4.is_ok() { return Err("proof_record_fail_closed: arg gap must fail"); }
+    let r5: Result[Int, String] = flight_record_failure(fw, frec_pfx(fs) + "rec_never.json", "c", 0 - 1, "o");
+    if r5.is_ok() { return Err("proof_record_fail_closed: negative status must fail"); }
+    if path_exists(fs, frec_pfx(fs) + "rec_never.json") { return Err("proof_record_fail_closed: rejected run wrote file"); }
+    return Ok(0);
+}
+
+fn proof_record_cli(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap) -> Result[Int, String] {
+    let loc: Result[String, String] = compiler_locate(fs, env);
+    if loc.is_err() { return Err("proof_record_cli: locate failed"); }
+    let bin: String = match loc { Ok(s) => s, Err(_) => "" };
+    let pfx: String = frec_pfx(fs);
+    let bad_path: String = pfx + "rec_cli_bad.oo";
+    let cap: String = pfx + "rec_cli_capsule.json";
+    let _wb: Result[Void, String] = write_file(fw, bad_path, frec_bad_content());
+    let _rm: Result[Void, String] = oo_fs_remove_file(fw, cap);
+    let mut fargs: List[String] = list_new();
+    fargs = list_push(fargs, "run");
+    fargs = list_push(fargs, "--record");
+    fargs = list_push(fargs, cap);
+    fargs = list_push(fargs, "--");
+    fargs = list_push(fargs, bin);
+    fargs = list_push(fargs, "check");
+    fargs = list_push(fargs, bad_path);
+    let rf: Result[Int, String] = cli_run_record_cmd(p, fw, fargs);
+    if rf.is_ok() { return Err("proof_record_cli: failing run must be Err"); }
+    if !path_exists(fs, cap) { return Err("proof_record_cli: CLI must persist capsule on failure"); }
+    let ok_cap: String = pfx + "rec_cli_ok.json";
+    let _rm2: Result[Void, String] = oo_fs_remove_file(fw, ok_cap);
+    let mut oargs: List[String] = list_new();
+    oargs = list_push(oargs, "run");
+    oargs = list_push(oargs, "--record");
+    oargs = list_push(oargs, ok_cap);
+    oargs = list_push(oargs, bin);
+    oargs = list_push(oargs, "check");
+    oargs = list_push(oargs, frec_sample(fs));
+    let ro: Result[Int, String] = cli_run_record_cmd(p, fw, oargs);
+    if ro.is_err() { return Err("proof_record_cli: passing run must be Ok"); }
+    if path_exists(fs, ok_cap) { return Err("proof_record_cli: passing CLI run must not write"); }
+    let mut nargs: List[String] = list_new();
+    nargs = list_push(nargs, "run");
+    nargs = list_push(nargs, "--bogus");
+    let rn: Result[Int, String] = cli_run_record_cmd(p, fw, nargs);
+    if rn.is_ok() { return Err("proof_record_cli: unknown flag must fail"); }
+    let mut margs: List[String] = list_new();
+    margs = list_push(margs, "run");
+    margs = list_push(margs, bin);
+    let rm: Result[Int, String] = cli_run_record_cmd(p, fw, margs);
+    if rm.is_ok() { return Err("proof_record_cli: missing --record must fail"); }
+    let _c1: Result[Void, String] = oo_fs_remove_file(fw, cap);
+    let _c2: Result[Void, String] = oo_fs_remove_file(fw, bad_path);
+    return Ok(0);
+}
+
+pub fn flight_record_proof_run(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap) -> Result[Int, String] {
+    let r1: Result[Int, String] = proof_record_failure_capsule(p, fs, fw, env);
+    if r1.is_err() { return r1; }
+    let r2: Result[Int, String] = proof_record_success_writes_nothing(p, fs, fw, env);
+    if r2.is_err() { return r2; }
+    let r3: Result[Int, String] = proof_record_bounds(fs, fw);
+    if r3.is_err() { return r3; }
+    let r4: Result[Int, String] = proof_record_fail_closed(p, fs, fw);
+    if r4.is_err() { return r4; }
+    let r5: Result[Int, String] = proof_record_cli(p, fs, fw, env);
+    if r5.is_err() { return r5; }
+    return Ok(0);
+}
+

@@ -1,0 +1,71 @@
+// # Failed-Flight Capsule Recorder
+//
+// Logline: Persists a bounded flight capsule when a spawned child fails.
+//
+// Setup: FsWriteCap. One overwrite per explicit path; output truncated.
+//
+// Beats:
+//   1. Cap captured output at 64KiB and flag truncation.
+//   2. Escape capsule JSON strings fail-closed.
+//   3. Write one capsule per explicit path with traversal guards.
+//   4. Return byte count; never append, never rotate, never grow.
+
+pub fn flight_record_max_output() -> Int {
+    return 65536;
+}
+
+fn flight_record_escape(s: String) -> String {
+    let n: Int = chars_len(s);
+    let mut out: String = "";
+    let mut i: Int = 0;
+    while i < n {
+        let c: String = char_at(s, i);
+        if c == "\\" { out = out + "\\\\"; }
+        else if c == "\"" { out = out + "\\\""; }
+        else if c == "\n" { out = out + "\\n"; }
+        else if c == "\r" { out = out + "\\r"; }
+        else if c == "\t" { out = out + "\\t"; }
+        else { out = out + c; }
+        i = i + 1;
+    }
+    return out;
+}
+
+pub fn flight_record_is_truncated(output: String) -> Bool {
+    return chars_len(output) > flight_record_max_output();
+}
+
+pub fn flight_record_kept_output(output: String) -> String {
+    if !flight_record_is_truncated(output) { return output; }
+    return str_slice(output, 0, flight_record_max_output());
+}
+
+pub fn flight_record_build(command: String, exit_status: Int, output: String) -> String {
+    let trunc: Bool = flight_record_is_truncated(output);
+    let kept: String = flight_record_kept_output(output);
+    let flag: String = if trunc { "true" } else { "false" };
+    let mut out: String = "{\n";
+    out = out + "  \"schema_version\": \"1.0.0\",\n";
+    out = out + "  \"kind\": \"flight-capsule\",\n";
+    out = out + "  \"command\": \"" + flight_record_escape(command) + "\",\n";
+    out = out + "  \"exit_status\": " + exit_status.to_string() + ",\n";
+    out = out + "  \"output_bytes\": " + chars_len(output).to_string() + ",\n";
+    out = out + "  \"truncated\": " + flag + ",\n";
+    out = out + "  \"output\": \"" + flight_record_escape(kept) + "\"\n";
+    out = out + "}\n";
+    return out;
+}
+
+pub fn flight_record_failure(fw: &FsWriteCap, out_path: String, command: String, exit_status: Int, output: String) -> Result[Int, String] {
+    if chars_len(out_path) == 0 { return Err("flight_record: empty capsule path"); }
+    if str_index_of(out_path, "..") >= 0 { return Err("flight_record: path traversal rejected"); }
+    if chars_len(command) == 0 { return Err("flight_record: empty command"); }
+    if exit_status < 0 { return Err("flight_record: negative exit status"); }
+    let capsule: String = flight_record_build(command, exit_status, output);
+    let wr: Result[Void, String] = write_file(fw, out_path, capsule);
+    if wr.is_err() {
+        let e: String = match wr { Ok(_) => "", Err(m) => m };
+        return Err("flight_record: write failed: " + e);
+    }
+    return Ok(chars_len(capsule));
+}

@@ -1,0 +1,141 @@
+// # Blackbox CLI Single-Command Heal
+//
+// Logline: Autopsy-to-heal in one CLI call with machine-readable ok/output JSON.
+//
+// Setup: ProcessCap, FsReadCap, FsWriteCap, EnvCap. Reuses self_heal; no MCP surface added.
+//
+// Beats:
+//   1. Format machine-readable heal reports (ok/status/target/guard or ok/error).
+//   2. Run heal from an autopsy path and emit JSON.
+//   3. Parse heal argv ([path] [--json]) fail-closed.
+//   4. Mirror the plain-text heal path without importing the dispatcher.
+
+import "autopsy/self_heal.oo";
+import "bridge/dir_watcher.oo";
+
+type AutopsyStackFrame = struct {
+    frame_num: Int, address: String, symbol: String, location: String
+};
+
+type AutopsyData = struct {
+    schema_version: String, crash_signal: Int, signal_name: String,
+    fault_address: String, failure_coordinate: String, root_cause: String,
+    description: String, backtrace: List[AutopsyStackFrame],
+    registers_rip: String, registers_rsp: String, registers_rbp: String,
+    cap_trapped: Bool, cap_mask_required: Int, cap_mask_held: Int,
+    granted_caps: List[String], remediation: String
+};
+
+fn cli_heal_json_escape(s: String) -> String {
+    let n: Int = chars_len(s);
+    let mut out: String = "";
+    let mut i: Int = 0;
+    while i < n {
+        let c: String = char_at(s, i);
+        if c == "\\" { out = out + "\\\\"; }
+        else if c == "\"" { out = out + "\\\""; }
+        else if c == "\n" { out = out + "\\n"; }
+        else if c == "\r" { out = out + "\\r"; }
+        else if c == "\t" { out = out + "\\t"; }
+        else { out = out + c; }
+        i = i + 1;
+    }
+    return out;
+}
+
+pub fn heal_format_json(ok: Bool, status: String, target: String, guard: String, cause: String, err: String) -> String {
+    if ok {
+        let mut out: String = "{\"ok\":true,";
+        out = out + "\"status\":\"" + cli_heal_json_escape(status) + "\",";
+        out = out + "\"target\":\"" + cli_heal_json_escape(target) + "\",";
+        out = out + "\"guard\":\"" + cli_heal_json_escape(guard) + "\",";
+        out = out + "\"root_cause\":\"" + cli_heal_json_escape(cause) + "\"}";
+        return out;
+    }
+    return "{\"ok\":false,\"error\":\"" + cli_heal_json_escape(err) + "\"}";
+}
+
+fn cli_heal_fail(err: String) -> Result[Int, String] {
+    println(heal_format_json(false, "", "", "", "", err));
+    println("ERR " + err);
+    return Err(err);
+}
+
+pub fn cli_run_heal_json(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap, path: String) -> Result[Int, String] {
+    let target: String = if chars_len(path) > 0 { path } else { dir_watcher_autopsy_file() };
+    if str_index_of(target, "..") >= 0 { return cli_heal_fail("path traversal rejected"); }
+    if !path_exists(fs, target) { return cli_heal_fail("autopsy file not found: " + target); }
+    let rd: Result[String, String] = dir_watcher_read_autopsy(fs, target);
+    if rd.is_err() {
+        let e: String = match rd { Ok(_) => "", Err(m) => m };
+        return cli_heal_fail(e);
+    }
+    let json: String = match rd { Ok(s) => s, Err(_) => "" };
+    let r_parse: Result[AutopsyData, String] = autopsy_parse(json);
+    if r_parse.is_err() {
+        let e2: String = match r_parse { Ok(_) => "", Err(m) => m };
+        return cli_heal_fail("invalid autopsy JSON: " + e2);
+    }
+    let data: AutopsyData = match r_parse { Ok(d) => d, Err(_) => return cli_heal_fail("unreachable") };
+    let coord: FailureCoordinate = coordinate_parse(data.failure_coordinate);
+    let guard: String = heal_extract_guard(data.remediation, data.root_cause);
+    let r_heal: Result[String, String] = heal_from_autopsy_data(p, fs, fw, env, data);
+    if r_heal.is_err() {
+        let e3: String = match r_heal { Ok(_) => "", Err(m) => m };
+        return cli_heal_fail(e3);
+    }
+    let rep: String = match r_heal { Ok(s) => s, Err(_) => "" };
+    let status: String = if str_index_of(rep, "ALREADY_HEALED") >= 0 { "ALREADY_HEALED" } else { "HEALED" };
+    println(heal_format_json(true, status, coordinate_format_source(coord), guard, data.root_cause, ""));
+    return Ok(0);
+}
+
+pub fn cli_run_heal_plain(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap, path: String) -> Result[Int, String] {
+    let target: String = if chars_len(path) > 0 { path } else { dir_watcher_autopsy_file() };
+    if str_index_of(target, "..") >= 0 {
+        println("ERR path traversal rejected");
+        return Err("path traversal rejected");
+    }
+    if !path_exists(fs, target) {
+        let msg: String = "autopsy file not found: " + target;
+        println("ERR " + msg);
+        return Err(msg);
+    }
+    let rd: Result[String, String] = dir_watcher_read_autopsy(fs, target);
+    if rd.is_err() {
+        let e: String = match rd { Ok(_) => "", Err(m) => m };
+        println("ERR " + e);
+        return Err(e);
+    }
+    let json: String = match rd { Ok(s) => s, Err(_) => "" };
+    let r_heal: Result[String, String] = heal_from_autopsy_json(p, fs, fw, env, json);
+    if r_heal.is_err() {
+        let e2: String = match r_heal { Ok(_) => "", Err(m) => m };
+        println("ERR " + e2);
+        return Err(e2);
+    }
+    let report: String = match r_heal { Ok(s) => s, Err(_) => "" };
+    println(report);
+    return Ok(0);
+}
+
+pub fn cli_run_heal_args(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap, args: List[String]) -> Result[Int, String] {
+    let n: Int = list_len(args);
+    let mut i: Int = 0;
+    if n > 0 && list_get(args, 0) == "heal" { i = 1; }
+    let mut pth: String = "";
+    let mut as_json: Bool = false;
+    while i < n {
+        let a: String = list_get(args, i);
+        if a == "--json" { as_json = true; }
+        else if str_starts_with(a, "--") {
+            let msg: String = "unknown heal flag: " + a;
+            println("ERR " + msg);
+            return Err(msg);
+        }
+        else if chars_len(pth) == 0 { pth = a; }
+        i = i + 1;
+    }
+    if as_json { return cli_run_heal_json(p, fs, fw, env, pth); }
+    return cli_run_heal_plain(p, fs, fw, env, pth);
+}

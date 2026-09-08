@@ -1,0 +1,125 @@
+// # Token Drift Regression Gate Proofs
+//
+// Logline: Proves blackbox diff exits nonzero on seeded AST drift and passes clean.
+//
+// Setup: ProcessCap, FsReadCap, FsWriteCap, EnvCap. Compiler via OODA_COMPILER.
+//
+// Beats:
+//   1. No-change compare reports Identical and the gate passes.
+//   2. Seeded one-token change is detected by compare and gate.
+//   3. CLI two-file diff returns Err on drift and Ok on identical.
+//   4. Empty, traversal, and missing inputs fail closed.
+//   5. Gate errors are drift verdicts, never masked IO failures.
+
+import "diff/compiler_runner.oo";
+import "diff/ast_diff.oo";
+import "cli/cli_run.oo";
+
+fn dgate_pfx(fs: &FsReadCap) -> String {
+    if path_exists(fs, "blackbox/qa/diff_sample.oo") { return "blackbox/qa/"; }
+    return "qa/";
+}
+
+fn dgate_seeded_content() -> String {
+    let mut s: String = "// # Distinctive token sample for blackbox diff\n//\n";
+    s = s + "// Logline: Tiny module whose tokens dump must contain blackbox_diff_sample.\n//\n";
+    s = s + "// Setup: No caps. No main. Used as a tokens target.\n//\n";
+    s = s + "// Beats:\n//   1. Export one function with a unique identifier.\n//   2. Return a constant so the body is non-empty.\n\n";
+    s = s + "pub fn blackbox_diff_sample() -> Int {\n    return 8;\n}\n";
+    return s;
+}
+
+fn proof_dgate_clean(p: &ProcessCap, fs: &FsReadCap, env: &EnvCap) -> Result[Int, String] {
+    let loc: Result[String, String] = compiler_locate(fs, env);
+    if loc.is_err() { return Err("proof_dgate_clean: locate failed"); }
+    let bin: String = match loc { Ok(s) => s, Err(_) => "" };
+    let sample: String = dgate_pfx(fs) + "diff_sample.oo";
+    let cmp: Result[String, String] = ast_diff_compare_files(p, bin, sample, sample);
+    if cmp.is_err() { return Err("proof_dgate_clean: compare failed"); }
+    let text: String = match cmp { Ok(s) => s, Err(_) => "" };
+    if str_index_of(text, "Status: Identical") < 0 { return Err("proof_dgate_clean: expected Identical"); }
+    if ast_diff_has_drift(text) { return Err("proof_dgate_clean: clean report must not flag drift"); }
+    let g: Result[Int, String] = ast_diff_gate(p, bin, sample, sample);
+    if g.is_err() { return Err("proof_dgate_clean: gate must pass on identical"); }
+    let c: Result[Int, String] = cli_run_diff(p, fs, env, sample, sample);
+    if c.is_err() { return Err("proof_dgate_clean: CLI diff must exit 0 on identical"); }
+    return Ok(0);
+}
+
+fn proof_dgate_seeded(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap) -> Result[Int, String] {
+    let loc: Result[String, String] = compiler_locate(fs, env);
+    if loc.is_err() { return Err("proof_dgate_seeded: locate failed"); }
+    let bin: String = match loc { Ok(s) => s, Err(_) => "" };
+    let pfx: String = dgate_pfx(fs);
+    let sample: String = pfx + "diff_sample.oo";
+    let seeded: String = pfx + "diff_gate_seeded.oo";
+    let _w: Result[Void, String] = write_file(fw, seeded, dgate_seeded_content());
+    let cmp: Result[String, String] = ast_diff_compare_files(p, bin, sample, seeded);
+    if cmp.is_err() {
+        let e: String = match cmp { Ok(_) => "", Err(m) => m };
+        let _c: Result[Void, String] = oo_fs_remove_file(fw, seeded);
+        return Err("proof_dgate_seeded: compare failed: " + e);
+    }
+    let text: String = match cmp { Ok(s) => s, Err(_) => "" };
+    if str_index_of(text, "Status: Identical") >= 0 {
+        let _c2: Result[Void, String] = oo_fs_remove_file(fw, seeded);
+        return Err("proof_dgate_seeded: seeded change reported Identical");
+    }
+    if str_index_of(text, "Summary:") < 0 {
+        let _c3: Result[Void, String] = oo_fs_remove_file(fw, seeded);
+        return Err("proof_dgate_seeded: drift report missing Summary");
+    }
+    if !ast_diff_has_drift(text) {
+        let _c4: Result[Void, String] = oo_fs_remove_file(fw, seeded);
+        return Err("proof_dgate_seeded: drift predicate missed real change");
+    }
+    let g: Result[Int, String] = ast_diff_gate(p, bin, sample, seeded);
+    if g.is_ok() {
+        let _c5: Result[Void, String] = oo_fs_remove_file(fw, seeded);
+        return Err("proof_dgate_seeded: gate passed on seeded drift");
+    }
+    let gm: String = match g { Ok(_) => "", Err(m) => m };
+    if str_index_of(gm, "drift") < 0 {
+        let _c6: Result[Void, String] = oo_fs_remove_file(fw, seeded);
+        return Err("proof_dgate_seeded: gate err must name drift, got: " + gm);
+    }
+    let c: Result[Int, String] = cli_run_diff(p, fs, env, sample, seeded);
+    if c.is_ok() {
+        let _c7: Result[Void, String] = oo_fs_remove_file(fw, seeded);
+        return Err("proof_dgate_seeded: CLI diff must exit nonzero on drift");
+    }
+    let cm: String = match c { Ok(_) => "", Err(m) => m };
+    if str_index_of(cm, "drift") < 0 {
+        let _c8: Result[Void, String] = oo_fs_remove_file(fw, seeded);
+        return Err("proof_dgate_seeded: CLI err must name drift, got: " + cm);
+    }
+    let _cc: Result[Void, String] = oo_fs_remove_file(fw, seeded);
+    return Ok(0);
+}
+
+fn proof_dgate_fail_closed(p: &ProcessCap, fs: &FsReadCap, env: &EnvCap) -> Result[Int, String] {
+    let loc: Result[String, String] = compiler_locate(fs, env);
+    if loc.is_err() { return Err("proof_dgate_fail_closed: locate failed"); }
+    let bin: String = match loc { Ok(s) => s, Err(_) => "" };
+    let sample: String = dgate_pfx(fs) + "diff_sample.oo";
+    let r1: Result[Int, String] = ast_diff_gate(p, bin, "", sample);
+    if r1.is_ok() { return Err("proof_dgate_fail_closed: empty path must fail"); }
+    let r2: Result[Int, String] = ast_diff_gate(p, bin, "../evil.oo", sample);
+    if r2.is_ok() { return Err("proof_dgate_fail_closed: traversal must fail"); }
+    let r3: Result[Int, String] = ast_diff_gate(p, bin, sample, dgate_pfx(fs) + "no_such_file.oo");
+    if r3.is_ok() { return Err("proof_dgate_fail_closed: missing file must fail"); }
+    let r4: Result[Int, String] = ast_diff_gate(p, "", sample, sample);
+    if r4.is_ok() { return Err("proof_dgate_fail_closed: empty compiler must fail"); }
+    return Ok(0);
+}
+
+pub fn diff_gate_proof_run(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap) -> Result[Int, String] {
+    let r1: Result[Int, String] = proof_dgate_clean(p, fs, env);
+    if r1.is_err() { return r1; }
+    let r2: Result[Int, String] = proof_dgate_seeded(p, fs, fw, env);
+    if r2.is_err() { return r2; }
+    let r3: Result[Int, String] = proof_dgate_fail_closed(p, fs, env);
+    if r3.is_err() { return r3; }
+    return Ok(0);
+}
+

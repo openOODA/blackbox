@@ -70,11 +70,11 @@ fn proof_autopsy_file(fs: &FsReadCap) -> Result[Int, String] {
 }
 
 fn proof_autopsy_fail_closed(fs: &FsReadCap) -> Result[Int, String] {
-    let miss: Result[String, String] = autopsy_read_report(fs, "blackbox/qa/no_such_autopsy.json");
+    let miss: Result[String, String] = autopsy_read_report(fs, "blackbox/qa/no_such_autopsy.json", false);
     if miss.is_ok() {
         return Err("proof_autopsy_fail_closed: missing file must fail");
     }
-    let trav: Result[String, String] = autopsy_read_report(fs, "../LICENSE");
+    let trav: Result[String, String] = autopsy_read_report(fs, "../LICENSE", false);
     if trav.is_ok() {
         return Err("proof_autopsy_fail_closed: .. must fail");
     }
