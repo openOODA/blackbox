@@ -38,7 +38,7 @@ pub fn proof_mcp_initialize(p: &ProcessCap, fs: &FsReadCap, env: &EnvCap) -> Res
 }
 
 pub fn proof_mcp_tools_list(p: &ProcessCap, fs: &FsReadCap, env: &EnvCap) -> Result[Int, String] {
-    if blackbox_mcp_tool_count() != 3 { return Err("proof_mcp_tools_list: tool count != 3"); }
+    if blackbox_mcp_tool_count() != 4 { return Err("proof_mcp_tools_list: tool count != 4"); }
     if blackbox_mcp_tool_caps("blackbox_autopsy") != 1 { return Err("proof_mcp_tools_list: autopsy cap != 1"); }
     if blackbox_mcp_tool_caps("blackbox_diff") != 5 { return Err("proof_mcp_tools_list: diff cap != 5"); }
     if blackbox_mcp_tool_caps("blackbox_trace") != 1 { return Err("proof_mcp_tools_list: trace cap != 1"); }

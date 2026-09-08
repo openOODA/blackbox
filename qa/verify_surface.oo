@@ -188,8 +188,8 @@ pub fn verify_surface_cli(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: 
 }
 
 pub fn verify_surface() -> Result[Int, String] {
-    if blackbox_mcp_tool_count() != 3 {
-        return Err("mcp tool count drifted from 3");
+    if blackbox_mcp_tool_count() != 4 {
+        return Err("mcp tool count drifted from 4");
     }
 
     if blackbox_mcp_tool_caps("blackbox_trace") != 1 {

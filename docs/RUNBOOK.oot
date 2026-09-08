@@ -1,0 +1,60 @@
+# BLACKBOX — Agent Runbook
+File: blackbox/docs/RUNBOOK.oot
+
+When to reach for each blackbox command while building, debugging, or gating.
+All commands fail closed (nonzero exit plus `ERR` line) on bad inputs.
+Compiler resolution is OODA_COMPILER else OODAC_BIN; reads and temp files
+stay under OODA_FS_READDIR/OODA_FS_WRITEDIR.
+
+## A build or test binary fails
+
+Rerun it under the recorder to capture the failure; success writes nothing:
+
+```sh
+blackbox run --record .blackbox/flight.json -- <cmd> [args]
+```
+
+Read the capsule (`command`, `exit_status`, truncated `output`, 64KiB cap).
+For a one-turn root-cause diagnosis from a capsule or crash report:
+
+```sh
+blackbox autopsy <autopsy.json>
+```
+
+## A diagnostic names a fixable defect
+
+Apply the autopsy patch guard, re-run `oodac check`, roll back on failure:
+
+```sh
+blackbox heal <autopsy.json>
+```
+
+The report is `{"ok":...}` JSON. `--dry-run` previews (see `blackbox help`).
+Never hand-apply a patch the healer refuses: a rollback means the guard
+did not verify.
+
+## Before committing a compiler change
+
+Gate on token drift between the old and new dumps:
+
+```sh
+blackbox diff <before.oo> <after.oo>
+```
+
+Exit nonzero means drift. Identical files print zero-drift status.
+Lowering work additionally uses `blackbox diff_em` (tokens vs `.em`
+bytecode) to catch lowering regressions.
+
+## From an MCP client instead of the shell
+
+`blackbox mcp --stdio` serves four tools: `blackbox_autopsy` (diagnosis
+from a capsule path), `blackbox_diff` / `blackbox_diff_em` (drift checks
+on a file), `blackbox_trace` (format a flight log). Same fail-closed
+semantics as the CLI.
+
+## Inspect and replay
+
+`blackbox inspect` runs live tokens/check/emit-c/build on one file and
+prints the stage text (compiler diagnostics included). `blackbox trace`
+prints a written `.blackbox/flight.json`; `blackbox replay` and
+`blackbox watch` cover recorded flights and live directories.

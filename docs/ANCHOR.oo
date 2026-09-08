@@ -16,3 +16,7 @@ pub fn docs_spec_file() -> String {
 pub fn docs_title() -> String {
     return "openOODA Blackbox Execution Flight Recorder and Crash Autopsy Subsystem";
 }
+
+pub fn docs_runbook_file() -> String {
+    return "docs/RUNBOOK.oot";
+}

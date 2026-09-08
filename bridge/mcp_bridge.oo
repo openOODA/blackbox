@@ -17,7 +17,7 @@ import "record/flight_log.oo";
 import "dir_watcher.oo";
 
 pub fn blackbox_mcp_tool_count() -> Int {
-    return 3;
+    return 4;
 }
 
 pub fn blackbox_mcp_tool_caps(name: String) -> Int {
