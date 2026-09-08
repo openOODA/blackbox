@@ -48,7 +48,7 @@ jobs:
           OODA_FS_READDIR: ${{ github.workspace }}
           OODA_FS_WRITEDIR: ${{ github.workspace }}
         run: |
-          "${OODA_COMPILER}" build blackbox/qa/suite.oo -o /tmp/bb_suite
+          "${OODA_COMPILER}" build --backend c blackbox/qa/suite.oo -o /tmp/bb_suite
           /tmp/bb_suite
 
   build:
@@ -85,7 +85,7 @@ jobs:
           OODA_FS_WRITEDIR: ${{ github.workspace }}
         run: |
           mkdir -p dist
-          "${OODA_COMPILER}" build blackbox/cli/main.oo -o dist/blackbox-linux-x86_64
+          "${OODA_COMPILER}" build --backend c blackbox/cli/main.oo -o dist/blackbox-linux-x86_64
           chmod +x dist/blackbox-linux-x86_64
           (cd dist && sha256sum blackbox-linux-x86_64 > blackbox-linux-x86_64.sha256)
           ls -lh dist/
