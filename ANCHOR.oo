@@ -2,7 +2,7 @@
 //
 // Logline: Front door for the blackbox/ directory. Autopsy reader, tokens diff, and fail-closed trace.
 //
-// Setup: Eight subsystem directories. Version is 0.0.3 in VERSION and blackbox_version().
+// Setup: Seven subsystem directories. Version is 0.0.3 in VERSION and blackbox_version().
 //
 // Beats:
 //   1. record/ provides telemetry schemas and flight event records.
