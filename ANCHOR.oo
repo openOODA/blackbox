@@ -2,7 +2,7 @@
 //
 // Logline: Front door for the blackbox/ directory. Autopsy reader, tokens diff, and fail-closed trace.
 //
-// Setup: Seven subsystem directories. Version is 0.0.3 in VERSION and blackbox_version().
+// Setup: Seven subsystem directories. Version is 0.0.11 in VERSION and blackbox_version().
 //
 // Beats:
 //   1. record/ provides telemetry schemas and flight event records.
@@ -25,5 +25,5 @@ import "qa/ANCHOR.oo";
 import "docs/ANCHOR.oo";
 
 pub fn blackbox_version() -> String {
-    return "0.0.3";
+    return "0.0.11";
 }

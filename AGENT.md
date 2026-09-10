@@ -35,7 +35,7 @@ bound by the repository's governance laws (`openOODA/RULES.oot` and
 
 ## 3. Strict Repository Compliance
 - **Pure Files:** Only `.oo` and `.oot` files are permitted for logic
-  (RULES.oot §1.14). Version is `0.0.3` in VERSION and `blackbox_version()`.
+  (RULES.oot §1.14). Version is `0.0.11` in VERSION and `blackbox_version()`.
 - **Line Limits:** Absolute maximum of 256 lines per file.
 - **Academy Headers:** All `.oo` files must begin with the exact 4-element
   Academy header.
