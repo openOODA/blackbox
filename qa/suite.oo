@@ -134,7 +134,7 @@ pub fn main(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap, args:
     let w_val: String = match r_w { Ok(s) => s, Err(_) => "" };
     if chars_len(w_val) == 0 {
         let bin: String = if list_len(args) > 0 { list_get(args, 0) } else { "/tmp/bb_test" };
-        let r_exec: Result[String, String] = sys_exec(p, "/usr/bin/env", "OODA_COMPILER=/home/jeryd/.local/bin/oodac", "OODA_FS_READDIR=/home/jeryd", "OODA_FS_WRITEDIR=/home/jeryd/Projects/openOODA", bin, "--reexec");
+        let r_exec: Result[String, String] = sys_exec(p, "/usr/bin/env", "OODA_COMPILER=/home/jeryd/.openooda/bin/oodac", "OODA_FS_READDIR=/home/jeryd", "OODA_FS_WRITEDIR=/home/jeryd/Projects/openOODA", bin, "--reexec");
         if r_exec.is_ok() {
             let out: String = match r_exec { Ok(s) => s, Err(_) => "" };
             println(out);
