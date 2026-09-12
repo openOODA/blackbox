@@ -6,7 +6,7 @@
 //
 // Beats:
 //   1. Implement IEEE 802.3 CRC-32 checksum algorithm.
-//   2. Provide sovereign Ed25519 test seed and public key derivation.
+//   2. Provide primary Ed25519 test seed and public key derivation.
 //   3. Compute algorithm-specific digests and signatures (crc32, sha256, blake3, sha3, sha512, ed25519).
 //   4. Verify digests and signatures with fail-closed integrity checks.
 
