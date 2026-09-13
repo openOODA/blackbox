@@ -1,5 +1,5 @@
 # BLACKBOX — Agent Runbook
-File: blackbox/docs/RUNBOOK.oot
+File: blackbox/docs/runbook.oot
 
 When to reach for each blackbox command while building, debugging, or gating.
 All commands fail closed (nonzero exit plus `ERR` line) on bad inputs.

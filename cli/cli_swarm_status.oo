@@ -1,0 +1,71 @@
+// # BB CLI — Swarm Status
+//
+// Logline: Inspect active swarm mesh state from a manifest or default topology.
+//
+// Setup: ThreadCap creates a transient mesh. FsReadCap loads the manifest.
+//
+// Beats:
+//   1. Parse --manifest <path> or default to swarm.oot / fallback manifest.
+//   2. Create a transient mesh under ThreadCap.
+//   3. Print mesh state.
+
+import "std/app/agent/swarm/anchor.oo";
+
+fn swarm_fallback_manifest() -> SwarmManifest {
+    let caps: AgentCaps = agent_caps_new(true, false, false, false);
+    let mut roles: List[AgentRole] = list_new();
+    roles = list_push(roles, agent_role_new("Planner", caps, 1000));
+    return SwarmManifest { name: "swarm", strategy: 0, max_restarts: 3, roles: roles, initial_task: "" };
+}
+
+pub fn cli_run_swarm_status(thread: &ThreadCap, fs: &FsReadCap, args: List[String]) -> Result<Int, String> {
+    let n: Int = list_len(args);
+    let mut manifest_path: String = "";
+    let mut i: Int = 0;
+    while i < n {
+        let arg: String = list_get(args, i);
+        if arg == "--manifest" || arg == "-m" {
+            if i + 1 >= n {
+                println("ERR\tswarm status: missing manifest path");
+                process_exit(2);
+                return Err("missing manifest");
+            }
+            manifest_path = list_get(args, i + 1); i = i + 1;
+        } else if str_starts_with(arg, "-") {
+            println("ERR\tswarm\tunknown flag: " + arg);
+            process_exit(2);
+            return Err("unknown flag");
+        } else if chars_len(manifest_path) == 0 { manifest_path = arg; }
+        i = i + 1;
+    }
+    if chars_len(manifest_path) > 0 && !path_exists(fs, manifest_path) {
+        println("ERR\tswarm\tunreadable manifest: " + manifest_path);
+        process_exit(2);
+        return Err("unreadable manifest");
+    }
+    let manifest_res: Result[SwarmManifest, String] = if chars_len(manifest_path) > 0 {
+        swarm_load_manifest(fs, manifest_path)
+    } else if path_exists(fs, "swarm.oot") {
+        swarm_load_manifest(fs, "swarm.oot")
+    } else {
+        swarm_manifest_parse(swarm_manifest_template())
+    };
+    if manifest_res.is_err() {
+        let em: String = match manifest_res { Ok(_) => "", Err(e) => e };
+        println("ERR\tswarm status: failed to parse manifest: " + em);
+        process_exit(2);
+        return Err(em);
+    }
+    let manifest: SwarmManifest = match manifest_res { Ok(m) => m, Err(_) => swarm_fallback_manifest() };
+    let mesh_res: Result[SwarmMesh, String] = swarm_create(thread, manifest);
+    if mesh_res.is_err() {
+        let em: String = match mesh_res { Ok(_) => "", Err(e) => e };
+        println("ERR\tswarm status: failed to create mesh: " + em);
+        process_exit(1);
+        return Err(em);
+    }
+    let mesh: SwarmMesh = match mesh_res { Ok(m) => m, Err(_) => SwarmMesh { sup: swarm_sup_new(thread, 0, 3), manifest: manifest, current_turn: 0, total_fuel_consumed: 0, is_finished: false } };
+    println(swarm_status(mesh));
+    println("Swarm Status: READY");
+    return Ok(0);
+}

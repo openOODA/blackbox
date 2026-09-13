@@ -1,4 +1,4 @@
-// # Blackbox CLI function proofs
+// # BB CLI function proofs
 //
 // Logline: Drive the same locate, autopsy, and trace functions the CLI uses.
 //

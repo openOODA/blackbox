@@ -1,4 +1,4 @@
-// # Blackbox Autopsy Subsystem Front Door
+// # BB Autopsy Subsystem Front Door
 //
 // Logline: Re-exports crash autopsy parsing, failure coordinate location, and root-cause classification.
 //

@@ -111,6 +111,10 @@ fn proof_pipeline_full_lifecycle(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap
     if str_index_of(w_rep, "1-Turn Agent Action:") < 0 { return Err("watcher missing 1-turn recipe"); }
 
     let _c1: Result[Void, String] = oo_fs_remove_file(fw, wdir + "/autopsy.json");
+    let _c1_d: Result[Void, String] = oo_fs_rmdir(fw, wdir);
+    if _c1_d.is_err() {
+        let _c1_p: Result[String, String] = sys_exec(p, "rmdir", wdir);
+    }
     let _c2: Result[Void, String] = oo_fs_remove_file(fw, pfx + "e2e_fl.json");
     let _c3: Result[Void, String] = oo_fs_remove_file(fw, pfx + "e2e_au.json");
     let _c4: Result[Void, String] = oo_fs_remove_file(fw, pfx + "e2e_main.bb");
@@ -199,6 +203,7 @@ fn proof_pipeline_double_run(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, en
     let c_h2: String = match rd_h2 { Ok(s) => s, Err(_) => "" };
     if c_h1 != c_h2 { return Err("double-run determinism: patched code Run_1 != Run_2"); }
 
+    let _mk_w: Result[Void, String] = oo_fs_mkdir(fw, wdir);
     let w1: Result[String, String] = dir_watcher_check_once(fs, wdir);
     let w2: Result[String, String] = dir_watcher_check_once(fs, wdir);
     let wr1: String = match w1 { Ok(s) => s, Err(_) => "" };
@@ -212,6 +217,10 @@ fn proof_pipeline_double_run(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, en
     let _c5: Result[Void, String] = oo_fs_remove_file(fw, pfx + "e2e_det2.bb");
     let _c6: Result[Void, String] = oo_fs_remove_file(fw, pfx + "e2e_scratch.oo");
     let _c7: Result[Void, String] = oo_fs_remove_file(fw, pfx + "e2e_scratch2.oo");
+    let _c8: Result[Void, String] = oo_fs_rmdir(fw, wdir);
+    if _c8.is_err() {
+        let _c8_p: Result[String, String] = sys_exec(p, "rmdir", wdir);
+    }
     return Ok(0);
 }
 

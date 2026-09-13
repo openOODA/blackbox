@@ -1,4 +1,4 @@
-// # Blackbox CLI Capsule Subcommands
+// # BB CLI Capsule Subcommands
 //
 // Logline: Dispatches pack and replay commands with crypto-agile signing, verification, and fail-closed validation.
 //

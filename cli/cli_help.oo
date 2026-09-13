@@ -1,0 +1,34 @@
+// # BB CLI — Usage Help
+//
+// Logline: Print the bb CLI usage block.
+//
+// Setup: Pure string builder. No caps.
+//
+// Beats:
+//   1. Compose usage text with 17 verbs across 4 categories.
+//   2. Return the assembled string.
+
+pub fn bb_cli_help() -> String {
+    let mut out: String = "Usage: bb autopsy|diff|inspect|trace|mcp|heal|pack|replay|watch|run|digest|health|bench|sandbox|swarm [args...]\n\n";
+    out = out + "Subcommands:\n";
+    out = out + "  autopsy [path] [--compact]     Parse autopsy JSON and print a 1-turn diagnosis\n";
+    out = out + "  diff <file.oo>                 Run oodac tokens (OODA_COMPILER or OODAC_BIN)\n";
+    out = out + "  diff-em <file.oo>              Diff pre-lowered tokens against .em bytecode\n";
+    out = out + "  inspect tokens|check|emit-c|build|em <file.oo>  Run a live oodac stage and print child text\n";
+    out = out + "  trace                          Print a written flight log if one exists\n";
+    out = out + "  mcp --stdio                    Start standalone JSON-RPC 2.0 MCP server\n";
+    out = out + "  heal [path] [--json]           Heal source defect from autopsy coordinates\n";
+    out = out + "  run --record <capsule> [--] <cmd> [args]  Run child; persist bounded flight capsule on failure\n";
+    out = out + "  pack [file.bb] [autopsy.json] [flight.json] [--sign <algo>] [--key <seed>]\n";
+    out = out + "                                 Bundle flight telemetry into signed .bb (crc32, sha256, blake3, sha3, sha512, ed25519)\n";
+    out = out + "  replay <file.bb> [--verify]    Verify integrity and reconstruct crash diagnosis\n";
+    out = out + "  watch [dir] [--once] [--max-ticks N] [--exit-on-event]  Monitor directory for crash artifacts and emit repair recipe\n";
+    out = out + "  digest <file> [--algo X]       Print hex digest (sha256 default; blake3|sha3|sha512)\n";
+    out = out + "  health                         Print env, oodac path, OODACODEX, cache, Landlock probes\n";
+    out = out + "  bench <file.oo> [--run]        Time oodac check (and optionally build+exec)\n";
+    out = out + "  sandbox status                 Inspect kernel sandbox backend and confinement state\n";
+    out = out + "  swarm status [--manifest P]    Inspect active swarm mesh state\n";
+    out = out + "  version                        Display bb version\n";
+    out = out + "  help                           Display this usage guide\n";
+    return out;
+}

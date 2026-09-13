@@ -1,0 +1,93 @@
+// # BB CLI — Bench
+//
+// Logline: Time `oodac check` (and optionally build+exec) on a .oo file.
+//
+// Setup: FsReadCap validates path. ProcessCap spawns oodac. EnvCap locates oodac. TimeCap measures ms.
+//
+// Beats:
+//   1. Parse argv for the target .oo file and optional --run flag.
+//   2. find_oodac locates the compiler; refuse_cli enforces no-shell invocation.
+//   3. Run `oodac check <path>`, time the call, print ms.
+//   4. If --run, also build and exec, then print the run ms.
+
+import "diff/compiler_runner.oo";
+
+pub fn bench_argv_file(args: List[String]) -> String {
+    let mut path: String = "";
+    let mut i: Int = 0;
+    while i < list_len(args) {
+        let a: String = list_get(args, i);
+        if str_slice(a, 0, 1) != "-" {
+            if path == "" { path = a; }
+        }
+        i = i + 1;
+    }
+    return path;
+}
+
+pub fn cli_run_bench(p: &ProcessCap, fs: &FsReadCap, env: &EnvCap, time: &TimeCap, args: List[String]) -> Result[Int, String] {
+    let mut path: String = bench_argv_file(args);
+    let mut do_run: Bool = false;
+    let mut i: Int = 0;
+    while i < list_len(args) {
+        let a: String = list_get(args, i);
+        if a == "--run" {
+            do_run = true;
+        } else if str_slice(a, 0, 1) != "-" {
+            if path == "" {
+                path = a;
+            }
+        }
+        i = i + 1;
+    }
+    if path == "" {
+        println("usage: bb bench <file.oo> [--run]");
+        process_exit(2);
+        return Err("missing file");
+    }
+    if !path_exists(fs, path) {
+        println("ERR\tbench\tunreadable file: " + path);
+        process_exit(2);
+        return Err("unreadable file");
+    }
+    let loc: Result[String, String] = compiler_locate(fs, env);
+    if loc.is_err() {
+        let e: String = match loc { Ok(_) => "", Err(m) => m };
+        println("ERR\tbench\t" + e);
+        process_exit(1);
+        return Err(e);
+    }
+    let oodac: String = match loc { Ok(s) => s, Err(_) => "" };
+    let t0: Int = now_ms(time);
+    let cr: Result[String, String] = sys_exec(p, oodac, "check", path);
+    let t1: Int = now_ms(time);
+    let mut ms: Int = t1 - t0;
+    if ms < 0 { ms = 0; }
+    if cr.is_err() {
+        println("blackbox bench: check failed " + path);
+        process_exit(1);
+        return Err("check failed");
+    }
+    println("blackbox bench: check " + path + " " + ms.to_string() + "ms");
+    if do_run {
+        let bout: String = path + ".bench.bin";
+        let br: Result<String, String> = sys_exec(p, oodac, "build", "--backend", "c", path, "-o", bout);
+        if br.is_err() {
+            println("blackbox bench: build failed " + path);
+            process_exit(1);
+            return Err("build failed");
+        }
+        let r0: Int = now_ms(time);
+        let rr: Result<String, String> = sys_exec(p, bout);
+        let r1: Int = now_ms(time);
+        let _del: Result<String, String> = sys_exec(p, "rm", "-f", bout);
+        let mut rms: Int = r1 - r0;
+        if rms < 0 { rms = 0; }
+        println("blackbox bench: run " + path + " " + rms.to_string() + "ms");
+        if rr.is_err() {
+            process_exit(1);
+            return Err("run failed");
+        }
+    }
+    return Ok(0);
+}

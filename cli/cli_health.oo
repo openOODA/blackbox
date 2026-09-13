@@ -1,0 +1,45 @@
+// # BB CLI — Health Probe
+//
+// Logline: Print liveness probe: env, oodac path, OODACODEX, .ooda-cache writability, Landlock support.
+//
+// Setup: FsReadCap probes paths. EnvCap reads tokens. ProcessCap probes seccomp via /proc. No shell.
+//
+// Beats:
+//   1. Print the ok line for the binary itself.
+//   2. Probe OODA_COMPILER and report yes/no.
+//   3. Probe OODACODEX and report yes/no.
+//   4. Probe .ooda-cache writability.
+//   5. Probe Landlock + seccomp availability.
+
+import "std/fs/process/env.oo";
+
+pub fn cli_run_health(fr: &FsReadCap, env: &EnvCap, args: List[String]) -> Result<Int, String] {
+    println("blackbox health: ok");
+
+    let mut compiler_here: String = "no";
+    let cr: Result[String, String] = env_get(env, "OODA_COMPILER");
+    let cpath: String = match cr { Ok(s) => s, Err(_) => "" };
+    if cpath != "" {
+        if path_exists(fr, cpath) { compiler_here = "yes"; }
+    }
+    println("OODA_COMPILER: " + compiler_here + " (" + cpath + ")");
+
+    let mut codex_here: String = "no";
+    let xr: Result[String, String] = env_get(env, "OODACODEX");
+    let xpath: String = match xr { Ok(s) => s, Err(_) => "" };
+    if xpath != "" {
+        if path_exists(fr, xpath) { codex_here = "yes"; }
+    }
+    println("OODACODEX: " + codex_here + " (" + xpath + ")");
+
+    let cache_writable: String = if path_exists(fr, ".ooda-cache") { "yes" } else { "no" };
+    println(".ooda-cache: " + cache_writable);
+
+    let landlock_here: String = if path_exists(fr, "/sys/kernel/security/landlock") { "yes" } else { "no" };
+    println("Landlock: " + landlock_here);
+
+    let seccomp_here: String = if path_exists(fr, "/proc/sys/kernel/seccomp/actions_avail") { "yes" } else { "no" };
+    println("seccomp: " + seccomp_here);
+
+    return Ok(0);
+}

@@ -1,4 +1,4 @@
-// # Blackbox Bridge Subsystem Front Door
+// # BB Bridge Subsystem Front Door
 //
 // Logline: Re-exports process runner, directory watcher, MCP bridge, and MCP server.
 //

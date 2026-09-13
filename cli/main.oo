@@ -1,8 +1,8 @@
-// # Blackbox Command Line Interface
+// # BB Command Line Interface
 //
-// Logline: Entry point. Dispatches autopsy, diff, and trace and exits fail-closed.
+// Logline: Entry point. Dispatches autopsy, diff, trace, and the Phase 6 verbs (digest/health/bench/sandbox/swarm) and exits fail-closed.
 //
-// Setup: Bound by ProcessCap, FsReadCap, FsWriteCap, and EnvCap.
+// Setup: Bound by ProcessCap, FsReadCap, FsWriteCap, EnvCap, TimeCap, ThreadCap.
 //
 // Beats:
 //   1. Dispatch argv through cli_dispatch.
@@ -11,8 +11,8 @@
 
 import "cli_run.oo";
 
-pub fn main(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap, args: List[String]) -> Result[Int, String] {
-    let r: Result[Int, String] = cli_dispatch(p, fs, fw, env, args);
+pub fn main(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap, time: &TimeCap, thread: &ThreadCap, args: List[String]) -> Result<Int, String] {
+    let r: Result[Int, String] = cli_dispatch(p, fs, fw, env, time, thread, args);
     match r {
         Ok(c) => {
             if c != 0 { process_exit(c); }

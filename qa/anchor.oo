@@ -1,4 +1,4 @@
-// # Blackbox QA Subsystem Front Door
+// # BB QA Subsystem Front Door
 //
 // Logline: Re-exports crash fixtures, verification proofs, and double-run invariant tests.
 //

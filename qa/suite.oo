@@ -1,4 +1,4 @@
-// # Blackbox Unified Test Runner
+// # BB Unified Test Runner
 //
 // Logline: Executes unified verification suite across telemetry, crash autopsy, MCP, self-healing, capsules, sentinel, and E2E.
 //
@@ -126,6 +126,11 @@ pub fn test_run_all(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCa
         return Err("test: e2e blue ocean proof failed: " + e);
     }
 
+    let _cln1: Result[Void, String] = oo_fs_rmdir(fw, "blackbox/qa/watch_test_dir");
+    let _cln2: Result[Void, String] = oo_fs_rmdir(fw, "qa/watch_test_dir");
+    if _cln1.is_err() && _cln2.is_err() {
+        let _cln_p: Result[String, String] = sys_exec(p, "rmdir", "blackbox/qa/watch_test_dir");
+    }
     return Ok(0);
 }
 

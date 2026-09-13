@@ -1,4 +1,4 @@
-// # Blackbox E-M Lowering Proof
+// # BB E-M Lowering Proof
 //
 // Logline: Proves that inspect-em and diff-em verify lowering fidelity and detect lowering regressions.
 //

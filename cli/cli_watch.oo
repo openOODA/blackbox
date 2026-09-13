@@ -1,4 +1,4 @@
-// # Blackbox CLI Watch Sentinel Subcommand
+// # BB CLI Watch Sentinel Subcommand
 //
 // Logline: Dispatches watch command to monitor crash artifacts with polling options and fail-closed validation.
 //

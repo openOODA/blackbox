@@ -206,5 +206,9 @@ pub fn watch_proof_run(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap) -> Resul
     if r6.is_err() { return r6; }
 
     let _rm_a: Result[Void, String] = oo_fs_remove_file(fw, t_dir + "/autopsy.json");
+    let _rm_d: Result[Void, String] = oo_fs_rmdir(fw, t_dir);
+    if _rm_d.is_err() {
+        let _rm_proc: Result[String, String] = sys_exec(p, "rmdir", t_dir);
+    }
     return Ok(0);
 }

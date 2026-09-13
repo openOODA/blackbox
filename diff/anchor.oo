@@ -1,4 +1,4 @@
-// # Blackbox Diff Subsystem Front Door
+// # BB Diff Subsystem Front Door
 //
 // Logline: Re-exports compiler locate, tokens runner, and token-dump diffing.
 //

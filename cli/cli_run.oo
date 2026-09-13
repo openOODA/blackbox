@@ -1,15 +1,16 @@
-// # Blackbox CLI Dispatch
+// # BB CLI Dispatch
 //
 // Logline: Routes autopsy, diff, inspect, trace, and mcp under Ocaps. Fail closed on missing inputs.
 //
-// Setup: ProcessCap, FsReadCap, FsWriteCap, EnvCap. Compiler from env.
+// Setup: ProcessCap, FsReadCap, FsWriteCap, EnvCap, TimeCap, ThreadCap. Compiler from env.
 //
 // Beats:
-//   1. Print usage that lists autopsy|diff|inspect|trace|mcp|heal|pack|replay|watch|run.
+//   1. Print usage that lists autopsy|diff|inspect|trace|mcp|heal|pack|replay|watch|run|digest|health|bench|sandbox|swarm.
 //   2. Autopsy reads JSON under FsReadCap and prints a diagnosis.
 //   3. Diff locates oodac, runs tokens, and exits nonzero on drift.
 //   4. Trace reads flight log; mcp runs standalone stdio server.
 //   5. Heal and run delegate to cli_heal and cli_run_cmd helpers.
+//   6. digest/health/bench/sandbox/swarm delegate to cli_dispatch_more (Phase 6).
 
 import "autopsy/report_formatter.oo";
 import "autopsy/self_heal.oo";
@@ -23,39 +24,18 @@ import "cli_capsule.oo";
 import "cli_watch.oo";
 import "cli_heal.oo";
 import "cli_run_cmd.oo";
+import "cli_dispatch_more.oo";
+import "cli_help.oo";
 
-pub fn cli_help() -> String {
-    let mut out: String = "Usage: blackbox autopsy|diff|inspect|trace|mcp|heal|pack|replay|watch|run [args...]\n\n";
-    out = out + "Subcommands:\n";
-    out = out + "  autopsy [path] [--compact]     Parse autopsy JSON and print a 1-turn diagnosis\n";
-    out = out + "  diff <file.oo>                 Run oodac tokens (OODA_COMPILER or OODAC_BIN)\n";
-    out = out + "  diff-em <file.oo>              Diff pre-lowered tokens against .em bytecode\n";
-    out = out + "  inspect tokens|check|emit-c|build|em <file.oo>\n";
-    out = out + "                                 Run a live oodac stage and print child text\n";
-    out = out + "  trace                          Print a written flight log if one exists\n";
-    out = out + "  mcp --stdio                    Start standalone JSON-RPC 2.0 MCP server\n";
-    out = out + "  heal [path] [--json]           Heal source defect from autopsy coordinates\n";
-    out = out + "  run --record <capsule> [--] <cmd> [args]\n";
-    out = out + "                                 Run child; persist bounded flight capsule on failure\n";
-    out = out + "  pack [file.bb] [autopsy.json] [flight.json] [--sign <algo>] [--key <seed>]\n";
-    out = out + "                                 Bundle flight telemetry into signed .bb (crc32, sha256, blake3, sha3, sha512, ed25519)\n";
-    out = out + "  replay <file.bb> [--verify]    Verify integrity and reconstruct crash diagnosis\n";
-    out = out + "  watch [dir] [--once] [--max-ticks N] [--exit-on-event]\n";
-    out = out + "                                 Monitor directory for crash artifacts and emit repair recipe\n";
-    out = out + "  version                        Display blackbox version\n";
-    out = out + "  help                           Display this usage guide\n";
-    return out;
-}
-
-fn cli_err(msg: String) -> Result[Int, String] {
+fn cli_err(msg: String) -> Result<Int, String> {
     let line: String = "ERR " + msg;
     println(line);
     return Err(msg);
 }
 
-pub fn autopsy_read_report(fs: &FsReadCap, path: String, compact: Bool) -> Result[String, String] {
+pub fn autopsy_read_report(fs: &FsReadCap, path: String, compact: Bool) -> Result<String, String> {
     let target: String = if chars_len(path) > 0 { path } else { dir_watcher_autopsy_file() };
-    let rd: Result[String, String] = dir_watcher_read_autopsy(fs, target);
+    let rd: Result<String, String> = dir_watcher_read_autopsy(fs, target);
     if rd.is_err() {
         let e: String = match rd { Ok(_) => "", Err(m) => m };
         return Err(e);
@@ -67,8 +47,8 @@ pub fn autopsy_read_report(fs: &FsReadCap, path: String, compact: Bool) -> Resul
     return autopsy_format_from_json(json);
 }
 
-pub fn cli_run_autopsy(fs: &FsReadCap, path: String, compact: Bool) -> Result[Int, String] {
-    let rep: Result[String, String] = autopsy_read_report(fs, path, compact);
+pub fn cli_run_autopsy(fs: &FsReadCap, path: String, compact: Bool) -> Result<Int, String> {
+    let rep: Result<String, String> = autopsy_read_report(fs, path, compact);
     if rep.is_err() {
         let e: String = match rep { Ok(_) => "", Err(m) => m };
         return cli_err(e);
@@ -78,18 +58,18 @@ pub fn cli_run_autopsy(fs: &FsReadCap, path: String, compact: Bool) -> Result[In
     return Ok(0);
 }
 
-pub fn cli_run_diff(p: &ProcessCap, fs: &FsReadCap, env: &EnvCap, file1: String, file2: String) -> Result[Int, String] {
+pub fn cli_run_diff(p: &ProcessCap, fs: &FsReadCap, env: &EnvCap, file1: String, file2: String) -> Result<Int, String> {
     if chars_len(file1) == 0 {
         return cli_err("missing file argument for diff");
     }
-    let loc: Result[String, String] = compiler_locate(fs, env);
+    let loc: Result<String, String> = compiler_locate(fs, env);
     if loc.is_err() {
         let e: String = match loc { Ok(_) => "", Err(m) => m };
         return cli_err(e);
     }
     let bin: String = match loc { Ok(s) => s, Err(_) => "" };
     if chars_len(file2) > 0 {
-        let cmp: Result[String, String] = ast_diff_compare_files(p, bin, file1, file2);
+        let cmp: Result<String, String> = ast_diff_compare_files(p, bin, file1, file2);
         if cmp.is_err() {
             let e: String = match cmp { Ok(_) => "", Err(m) => m };
             return cli_err(e);
@@ -101,7 +81,7 @@ pub fn cli_run_diff(p: &ProcessCap, fs: &FsReadCap, env: &EnvCap, file1: String,
         }
         return Ok(0);
     }
-    let insp: Result[String, String] = ast_diff_inspect_file(p, bin, file1);
+    let insp: Result<String, String> = ast_diff_inspect_file(p, bin, file1);
     if insp.is_err() {
         let e: String = match insp { Ok(_) => "", Err(m) => m };
         return cli_err(e);
@@ -111,15 +91,15 @@ pub fn cli_run_diff(p: &ProcessCap, fs: &FsReadCap, env: &EnvCap, file1: String,
     return Ok(0);
 }
 
-pub fn cli_run_diff_em(p: &ProcessCap, fs: &FsReadCap, env: &EnvCap, file_path: String) -> Result[Int, String] {
+pub fn cli_run_diff_em(p: &ProcessCap, fs: &FsReadCap, env: &EnvCap, file_path: String) -> Result<Int, String> {
     if chars_len(file_path) == 0 { return cli_err("missing file argument for diff-em"); }
-    let loc: Result[String, String] = compiler_locate(fs, env);
+    let loc: Result<String, String] = compiler_locate(fs, env);
     if loc.is_err() {
         let e: String = match loc { Ok(_) => "", Err(m) => m };
         return cli_err(e);
     }
     let bin: String = match loc { Ok(s) => s, Err(_) => "" };
-    let cmp: Result[String, String] = ast_diff_em_file(p, bin, file_path);
+    let cmp: Result<String, String> = ast_diff_em_file(p, bin, file_path);
     if cmp.is_err() {
         let e2: String = match cmp { Ok(_) => "", Err(m) => m };
         return cli_err(e2);
@@ -129,14 +109,14 @@ pub fn cli_run_diff_em(p: &ProcessCap, fs: &FsReadCap, env: &EnvCap, file_path: 
     return Ok(0);
 }
 
-pub fn cli_run_trace(fs: &FsReadCap) -> Result[Int, String] {
-    let rd: Result[String, String] = dir_watcher_read_flight(fs, "");
+pub fn cli_run_trace(fs: &FsReadCap) -> Result<Int, String> {
+    let rd: Result<String, String> = dir_watcher_read_flight(fs, "");
     if rd.is_err() {
         let e: String = match rd { Ok(_) => "", Err(m) => m };
         return cli_err(e);
     }
     let text: String = match rd { Ok(s) => s, Err(_) => "" };
-    let formatted: Result[String, String] = flight_format_from_json(text);
+    let formatted: Result<String, String> = flight_format_from_json(text);
     if formatted.is_err() {
         let e2: String = match formatted { Ok(_) => "", Err(m) => m };
         return cli_err(e2);
@@ -146,7 +126,7 @@ pub fn cli_run_trace(fs: &FsReadCap) -> Result[Int, String] {
     return Ok(0);
 }
 
-pub fn cli_run_heal(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap, path: String) -> Result[Int, String] {
+pub fn cli_run_heal(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap, path: String) -> Result<Int, String> {
     let target: String = if chars_len(path) > 0 { path } else { dir_watcher_autopsy_file() };
     if str_index_of(target, "..") >= 0 {
         return cli_err("path traversal rejected");
@@ -154,13 +134,13 @@ pub fn cli_run_heal(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCa
     if !path_exists(fs, target) {
         return cli_err("autopsy file not found: " + target);
     }
-    let rd: Result[String, String] = dir_watcher_read_autopsy(fs, target);
+    let rd: Result<String, String> = dir_watcher_read_autopsy(fs, target);
     if rd.is_err() {
         let e: String = match rd { Ok(_) => "", Err(m) => m };
         return cli_err(e);
     }
     let json: String = match rd { Ok(s) => s, Err(_) => "" };
-    let r_heal: Result[String, String] = heal_from_autopsy_json(p, fs, fw, env, json);
+    let r_heal: Result<String, String> = heal_from_autopsy_json(p, fs, fw, env, json);
     if r_heal.is_err() {
         let e2: String = match r_heal { Ok(_) => "", Err(m) => m };
         return cli_err(e2);
@@ -170,10 +150,10 @@ pub fn cli_run_heal(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCa
     return Ok(0);
 }
 
-pub fn cli_dispatch(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap, args: List[String]) -> Result[Int, String] {
+pub fn cli_dispatch(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap, time: &TimeCap, thread: &ThreadCap, args: List[String]) -> Result<Int, String> {
     let n: Int = list_len(args);
     if n == 0 {
-        println(cli_help());
+        println(bb_cli_help());
         return Ok(0);
     }
     let subcmd: String = list_get(args, 0);
@@ -240,17 +220,12 @@ pub fn cli_dispatch(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCa
         }
         return mcp_server_run_stdio(p, fs, fw, env);
     }
-    if subcmd == "version" { println("openOODA blackbox v0.0.3"); return Ok(0); }
-    if subcmd == "--version" { println("openOODA blackbox v0.0.3"); return Ok(0); }
-    if subcmd == "-v" { println("openOODA blackbox v0.0.3"); return Ok(0); }
-    if subcmd == "help" { println(cli_help()); return Ok(0); }
-    if subcmd == "--help" { println(cli_help()); return Ok(0); }
-    if subcmd == "-h" { println(cli_help()); return Ok(0); }
+    if subcmd == "version" { println("openOODA bb v0.0.12"); return Ok(0); }
+    if subcmd == "--version" { println("openOODA bb v0.0.12"); return Ok(0); }
+    if subcmd == "-v" { println("openOODA bb v0.0.12"); return Ok(0); }
+    if subcmd == "help" { println(bb_cli_help()); return Ok(0); }
+    if subcmd == "--help" { println(bb_cli_help()); return Ok(0); }
+    if subcmd == "-h" { println(bb_cli_help()); return Ok(0); }
 
-    let _fw: &FsWriteCap = fw;
-    let umsg: String = "unknown subcommand: " + subcmd;
-    let uline: String = "ERR " + umsg;
-    println(uline);
-    println(cli_help());
-    return Err(umsg);
+    return cli_dispatch_more(p, fs, fw, env, time, thread, args);
 }

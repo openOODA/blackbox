@@ -8,12 +8,12 @@
 //
 // Setup:  Authored 2026-09-10 14:50 by session
 //         mvs_b464548950d7469bb107a25d68f8bbc8 (Mavis / orchestrator).
-//         Follows the audit-history/ANCHOR.oo precedent: 4-element
+//         Follows the audit-history/anchor.oo precedent: 4-element
 //         Academy header on .oot (per NOTE n2 of the openOODA/openOODA/
 //         focused audit; .oot is treated as audit-trail surface).
 //         Pure structural .oot, file:line evidence on every claim.
 //         In-scope: blackbox/ only (587 files, 55 .oo + 25 qa/ + 8
-//         ANCHOR.oo + 1 ci workflow). Out-of-scope: oodac/ oodar/
+//         anchor.oo + 1 ci workflow). Out-of-scope: oodac/ oodar/
 //         std/ install/ opm/ catalog/ lsp/ mcp/ openOODA/ website/
 //         ooda/ — owned by other agents or next-up audit targets.
 //
@@ -33,10 +33,10 @@
 
 // | Pass | Verdict | Note |
 // |------|---------|------|
-// | 0 Pre-flight   | OK     | 587 files, 55 .oo, 25 qa/, 8 ANCHOR.oo, 1 ci workflow. Dirty=0. |
+// | 0 Pre-flight   | OK     | 587 files, 55 .oo, 25 qa/, 8 anchor.oo, 1 ci workflow. Dirty=0. |
 // | 1 Locks        | PASS   | 4 locks re-derived, double-run, identical. 0 fails. |
-// | 2 File law     | PASS   | 0 over-256, 0 missing headers, 0 forbidden exts, 8/8 ANCHOR.oo ALLCAPS. |
-// | 3 Structure    | PASS   | 8/8 ANCHOR.oo 4-element headers; AGENT.md 4 sections; qa/ANCHOR.oo present. |
+// | 2 File law     | PASS   | 0 over-256, 0 missing headers, 0 forbidden exts, 8/8 anchor.oo ALLCAPS. |
+// | 3 Structure    | PASS   | 8/8 anchor.oo 4-element headers; AGENT.md 4 sections; qa/anchor.oo present. |
 // | 4 Drift        | MAJOR  | 4 sources claim version 0.0.3; actual tag v0.0.11 (drift +0.0.8). |
 // | 5 Validator    | PASS   | 3/3 mcp__blackbox__* tools functional on real blackbox inputs. |
 
@@ -49,13 +49,13 @@
 // | HEAD age | 70 min at audit time | `git log -1 --format='%cr'` |
 // | Last commit before HEAD | `cb2b2ae` 2026-09-10 `ci: migrate auto-release pin from @vgovernance-v1.0.12 to @v2.10.23` | `git log` |
 // | Dirty | 0 files | `git status --porcelain` |
-// | Top-level files | AGENT.md, ANCHOR.oo, LICENSE, PROJECT.md, README.md, VERSION | `ls -la` |
+// | Top-level files | AGENT.md, anchor.oo, LICENSE, PROJECT.md, README.md, VERSION | `ls -la` |
 // | Top-level dirs | autopsy/ bridge/ cli/ diff/ docs/ qa/ record/ + .github/ .agents/ .blackbox/ .ooda-cache/ | `ls -la` |
 // | Total files (excl. .git .agents) | 587 | `find -type f` |
 // | .oo files | 55 | `find -name '*.oo'` |
 // | .oot files | 2 | `find -name '*.oot'` |
 // | qa/ files | 25 | `ls qa/` |
-// | ANCHOR.oo (root + subs) | 8 | `find -name 'ANCHOR.oo'` |
+// | anchor.oo (root + subs) | 8 | `find -name 'anchor.oo'` |
 // | CI workflows | 1 | `.github/workflows/ci.yml` |
 // | State dirs (gitignored) | .blackbox/, .ooda-cache/ | `ls -la` |
 // | State dir contents | `.blackbox/flight.json` (1 event, 147 B) | `ls .blackbox/` |
@@ -71,19 +71,19 @@
 // | governance_enforce Rule A (256-line) | 0/61 fail | 0/61 fail | PASS (61 .oo/.oot/.c/.h/.yml/.md files, 0 over 256) |
 // | governance_enforce Rule B (header)   | 0 fail    | 0 fail    | PASS (55/55 .oo files have `// # ` first line) |
 // | governance_enforce Rule C (exts)     | 0 fail    | 0 fail    | PASS (no .py/.js/.ts/.rb/.pl) |
-// | governance_enforce Rule D (ANCHOR.oo)| 0 fail    | 0 fail    | PASS (8/8 ALLCAPS; 0 lowercase) |
+// | governance_enforce Rule D (anchor.oo)| 0 fail    | 0 fail    | PASS (8/8 ALLCAPS; 0 lowercase) |
 // | governance_verify (RFC + practice)   | N/A       | N/A       | N/A — blackbox/ has no RFCs or practices of its own (per org audit 2026-09-10 Pass-2). |
 // | governance_check_boards              | N/A       | N/A       | N/A — boards live in openOODA/openOODA/. |
 // | proof_of_today moonshot line 21      | PASS      | PASS      | PASS — `git describe --tags --abbrev=0` = `v0.0.11`; claim "blackbox v0.0.11 ships" is TRUE. |
 
-// ## 4. Pass-2 — File law (RULES.oot §1.8, §1.11, §1.14, §1.19)
+// ## 4. Pass-2 — File law (rules.oot §1.8, §1.11, §1.14, §1.19)
 
 // | Check                          | Result | Detail |
 // |--------------------------------|--------|--------|
 // | 256-line cap (Rule A)          | PASS   | 0 of 61 product files exceed 256 lines. Largest is `cli/cli_run.oo` at 256/256 (exactly at cap, no headroom). |
 // | 4-element header on .oo (Rule B)| PASS  | 55 of 55 .oo files start with `// # `. |
 // | Forbidden extensions (Rule C)  | PASS   | 0 `.py`, 0 `.js`, 0 `.ts`, 0 `.rb`, 0 `.pl` in product tree. (No `.sh` either; the only shell is implicit via oodac/ProcessCap.) |
-// | ANCHOR.oo ALLCAPS (Rule D)     | PASS   | 8/8 ANCHOR.oo are ALLCAPS. 0 lowercase `anchor.oo` exist. |
+// | anchor.oo ALLCAPS (Rule D)     | PASS   | 8/8 anchor.oo are ALLCAPS. 0 lowercase `anchor.oo` exist. |
 
 // Notable: `cli/cli_run.oo` is at exactly 256 lines. Any future addition
 // pushes it over and triggers a §1.8 split. (Tracked as MINOR m1.)
@@ -92,16 +92,16 @@
 
 // | Item | Status | Evidence |
 // |------|--------|----------|
-// | 8 ANCHOR.oo files | PASS | root + record/ autopsy/ diff/ bridge/ cli/ qa/ docs/ |
-// | All 8 ANCHOR.oo 4-element header | PASS | all start with `// # Title\n//\n// Logline: ...\n//\n// Setup: ...` |
+// | 8 anchor.oo files | PASS | root + record/ autopsy/ diff/ bridge/ cli/ qa/ docs/ |
+// | All 8 anchor.oo 4-element header | PASS | all start with `// # Title\n//\n// Logline: ...\n//\n// Setup: ...` |
 // | AGENT.md exists | PASS | 2690 B; 4 sections per its own claim (§1 Zero Trust, §2 Services, §3 Compliance, §4 Commit Hygiene) |
 // | AGENT.md 4 sections | PASS | lines 7-9, 11-23, 26-39, 42-52 (H1, H2, H3, H4 headers) |
 // | README.md present | PASS | 4858 B; ASCII banner, "Flight recorder, crash autopsy engine, and compiler AST diffing subsystem" |
 // | PROJECT.md present | PASS | 9223 B; "Project: openOODA/blackbox Blue Ocean Features Upgrade" — M5 milestone tracking |
 // | LICENSE present | PASS | 1082 B; MIT (per cross-repo LICENSE convention) |
 // | VERSION file present | PASS | 6 B; content `0.0.3` (see Drift section; the value is wrong, the file's presence is correct) |
-// | `blackbox_version()` function | PRESENT | ANCHOR.oo:27-29; returns `"0.0.3"` (see Drift M1) |
-// | qa/ANCHOR.oo | PASS | 4-element header; lists 8 imports (crash_fixtures, crash_fixture_proof, double_run_proof, mcp_proof, flight_record_proof, heal_json_proof, diff_gate_proof, suite) |
+// | `blackbox_version()` function | PRESENT | anchor.oo:27-29; returns `"0.0.3"` (see Drift M1) |
+// | qa/anchor.oo | PASS | 4-element header; lists 8 imports (crash_fixtures, crash_fixture_proof, double_run_proof, mcp_proof, flight_record_proof, heal_json_proof, diff_gate_proof, suite) |
 // | qa/suite.oo (CI entry) | PASS | 4-element header; 10-step Beats (1-10); first import is `verify_surface.oo` |
 // | CI workflow | PASS | 1 file (`.github/workflows/ci.yml`, 195 lines) |
 
@@ -114,13 +114,13 @@
 // | Source | Claim | Evidence line | Ground truth | Drift |
 // |--------|-------|---------------|--------------|-------|
 // | `VERSION` | `0.0.3` | `VERSION:1` | `v0.0.11` | **+0.0.8** |
-// | `ANCHOR.oo:5` (Setup comment) | `Version is 0.0.3 in VERSION and blackbox_version()` | line 5 | `v0.0.11` | **+0.0.8** |
-// | `ANCHOR.oo:28` (function body) | `return "0.0.3"` | line 28 | `v0.0.11` | **+0.0.8** |
+// | `anchor.oo:5` (Setup comment) | `Version is 0.0.3 in VERSION and blackbox_version()` | line 5 | `v0.0.11` | **+0.0.8** |
+// | `anchor.oo:28` (function body) | `return "0.0.3"` | line 28 | `v0.0.11` | **+0.0.8** |
 // | `AGENT.md:38` (Strict Repository Compliance bullet) | `Version is 0.0.3 in VERSION and blackbox_version()` | line 38 | `v0.0.11` | **+0.0.8** |
 // | `.github/workflows/ci.yml:132` (download URL) | `releases/download/v0.0.10/blackbox-linux-x86_64` | line 132 | `v0.0.11` | +0.0.1 |
 // | `.github/workflows/ci.yml:134` (sha256 sidecar) | `releases/download/v0.0.10/blackbox-linux-x86_64.sha256` | line 134 | `v0.0.11` | +0.0.1 |
 // | `moonshot_scorecard.oot:21` | `blackbox v0.0.11 ships` | (per prior focused audit) | `v0.0.11` | match ✓ |
-// | `openOODA/docs/INDEX.oot:35` | `v0.0.11` | (per f0921f1 refresh) | `v0.0.11` | match ✓ |
+// | `openOODA/docs/index.oot:35` | `v0.0.11` | (per f0921f1 refresh) | `v0.0.11` | match ✓ |
 // | `org audit 2026-09-10` (this session's earlier audit) | `blackbox v0.0.11` | line 76 of org audit | `v0.0.11` | match ✓ |
 
 // ## 7. Pass-5 — Validator (mcp__blackbox__* tools cross-check)
@@ -148,7 +148,7 @@
 // **MAJOR (1):**
 
 //   M1. **Version stamp drift across 4 in-repo sources.** `VERSION` (line 1),
-//       `ANCHOR.oo:5` (Setup comment), `ANCHOR.oo:28` (`blackbox_version()`
+//       `anchor.oo:5` (Setup comment), `anchor.oo:28` (`blackbox_version()`
 //       function body), and `AGENT.md:38` (Strict Repository Compliance
 //       bullet) all claim `0.0.3`. The ground-truth tag is `v0.0.11`.
 //       Drift is +0.0.8. The `blackbox_version()` function is the worst
@@ -208,7 +208,7 @@
 
 // 1. Update `VERSION` to `0.0.11` (or `0.0.12` if the next release is
 //    already in flight; check `git log --oneline` for unreleased work).
-// 2. Update `ANCHOR.oo:5` (Setup comment) and `ANCHOR.oo:28` (function
+// 2. Update `anchor.oo:5` (Setup comment) and `anchor.oo:28` (function
 //    body) to match.
 // 3. Update `AGENT.md:38` to match.
 // 4. Bump `.github/workflows/ci.yml:132-134` download URLs to
@@ -226,7 +226,7 @@
 //    (PASS; only `cli/cli_run.oo` is at the cap, others well under).
 // 2. **4-element header on .oo:** 55/55 (PASS).
 // 3. **Forbidden extensions:** 0 violations (PASS).
-// 4. **ANCHOR.oo ALLCAPS:** 8/8 (PASS).
+// 4. **anchor.oo ALLCAPS:** 8/8 (PASS).
 // 5. **Lock re-derivations:** 4 locks × 2 runs, identical (PASS).
 // 6. **Drift checks:** 5 sources of version stamp drift surfaced
 //    with file:line evidence (PASS; documented in Pass 4).

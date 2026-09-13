@@ -1,0 +1,55 @@
+// # BB CLI — Extended Dispatch
+//
+// Logline: Routes digest, health, bench, sandbox-status, swarm-status from cli_dispatch into their respective handlers.
+//
+// Setup: ProcessCap, FsReadCap, FsWriteCap, EnvCap, TimeCap, ThreadCap as needed by each verb.
+//
+// Beats:
+//   1. digest -> cli_digest (FsReadCap).
+//   2. health -> cli_health (FsReadCap + EnvCap).
+//   3. bench -> cli_bench (ProcessCap + FsReadCap + EnvCap + TimeCap).
+//   4. sandbox status -> cli_sandbox_status.
+//   5. swarm status -> cli_swarm_status.
+
+import "cli_digest.oo";
+import "cli_health.oo";
+import "cli_bench.oo";
+import "cli_sandbox_status.oo";
+import "cli_swarm_status.oo";
+
+pub fn cli_dispatch_more(p: &ProcessCap, fs: &FsReadCap, fw: &FsWriteCap, env: &EnvCap, time: &TimeCap, thread: &ThreadCap, args: List[String]) -> Result<Int, String] {
+    let n: Int = list_len(args);
+    if n == 0 {
+        return Err("cli_dispatch_more: no subcommand");
+    }
+    let sub: String = list_get(args, 0);
+
+    if sub == "digest" {
+        let rest: List[String] = list_slice(args, 1, n);
+        return cli_run_digest(fs, rest);
+    }
+    if sub == "health" {
+        let rest: List[String] = list_slice(args, 1, n);
+        return cli_run_health(fs, env, rest);
+    }
+    if sub == "bench" {
+        let rest: List[String] = list_slice(args, 1, n);
+        return cli_run_bench(p, fs, env, time, rest);
+    }
+    if sub == "sandbox" {
+        if n > 1 && list_get(args, 1) == "status" {
+            let rest: List[String] = list_slice(args, 2, n);
+            return cli_run_sandbox_status(rest);
+        }
+        return Err("cli sandbox: only `status` is exposed (run moved to ooda-tui)");
+    }
+    if sub == "swarm" {
+        if n > 1 && list_get(args, 1) == "status" {
+            let rest: List[String] = list_slice(args, 2, n);
+            return cli_run_swarm_status(thread, fs, rest);
+        }
+        return Err("cli swarm: only `status` is exposed (init|run moved to ooda-tui)");
+    }
+
+    return Err("unknown subcommand for cli_dispatch_more: " + sub);
+}

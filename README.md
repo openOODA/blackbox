@@ -8,7 +8,7 @@
       /_/                   \___/ \___/|____/_/   \_\
 </pre>
 
-### openOODA — Sovereign Systems Language for the AI Era
+### openOODA — Primary Systems Language for the AI Era
 
 [openooda.org](https://openooda.org)
 
@@ -16,13 +16,13 @@
 
 ---
 
-## This repo: blackbox
+## This repo: bb
 
 Flight recorder, crash autopsy engine, and compiler AST diffing subsystem.
 
 ```
-blackbox/
-├── ANCHOR.oo        Root front door and version surface
+bb/
+├── anchor.oo        Root front door and version surface
 ├── record/          Telemetry schemas, flight event records, ring buffer
 ├── autopsy/         Autopsy parser, failure locator, root-cause classifier
 ├── diff/            AST pass diffing and compiler stage comparator
@@ -34,7 +34,7 @@ blackbox/
 
 ## Purpose
 
-The `blackbox` CLI reads crash autopsy JSON, dumps live `oodac tokens` output,
+The `bb` CLI reads crash autopsy JSON, dumps live `oodac tokens` output,
 auto-records bounded flight capsules for failing spawned processes, heals
 sources from autopsy coordinates, and gates CI on token-dump drift.
 `run --record <capsule> -- <cmd> [args]` spawns a child under `ProcessCap`
@@ -53,27 +53,27 @@ machine-readable `{"ok":...}` with `--json`.
 
 ```sh
 # Parse autopsy JSON and output 1-turn agent diagnosis
-blackbox autopsy path/to/autopsy.json
+bb autopsy path/to/autopsy.json
 
 # Run a child; on failure persist a bounded flight capsule (exit nonzero)
-blackbox run --record flight-fail.json -- "$OODA_COMPILER" check path/to/file.oo
+bb run --record flight-fail.json -- "$OODA_COMPILER" check path/to/file.oo
 
 # Heal a source defect from autopsy coordinates (machine-readable with --json)
-blackbox heal path/to/autopsy.json --json
+bb heal path/to/autopsy.json --json
 
 # Run oodac tokens on a file (requires OODA_COMPILER or OODAC_BIN)
-blackbox diff path/to/file.oo
+bb diff path/to/file.oo
 
 # Compare two files; exits nonzero when token dumps drift (CI gate)
-blackbox diff path/to/before.oo path/to/after.oo
+bb diff path/to/before.oo path/to/after.oo
 
 # Run a live oodac stage (tokens, check, emit-c, or build)
-blackbox inspect check path/to/file.oo
-blackbox inspect emit-c path/to/file.oo
-blackbox inspect build path/to/file.oo
+bb inspect check path/to/file.oo
+bb inspect emit-c path/to/file.oo
+bb inspect build path/to/file.oo
 
 # Print a written flight log, or ERR if none exists
-blackbox trace
+bb trace
 ```
 
 ## Governance and Constraints
@@ -87,19 +87,19 @@ blackbox trace
 
 | Repo | Purpose |
 |------|---------|
-| [openOODA/openOODA](https://github.com/openOODA/openOODA) | Governance, RFCs, and constitutional invariants |
-| [openOODA/ooda](https://github.com/openOODA/ooda) | Unified developer workflow driver |
-| [openOODA/oodac](https://github.com/openOODA/oodac) | Sovereign compiler and AST engine |
-| [openOODA/oodar](https://github.com/openOODA/oodar) | Low-level C runtime substrate |
+| [openOODA/openOODA](https://github.com/openOODA/openOODA) | Governance, RFCs, laws |
+| [openOODA/oodar](https://github.com/openOODA/oodar) | Runtime substrate |
+| [openOODA/oodac](https://github.com/openOODA/oodac) | Primary compiler and AST engine |
 | [openOODA/std](https://github.com/openOODA/std) | Standard library |
-| [openOODA/mcp](https://github.com/openOODA/mcp) | Model Context Protocol server |
-| [openOODA/opm](https://github.com/openOODA/opm) | Cryptographic package manager |
-| [openOODA/lsp](https://github.com/openOODA/lsp) | Language Server Protocol daemon |
-| [openOODA/catalog](https://github.com/openOODA/catalog) | Official ecosystem package catalog |
-| [openOODA/website](https://github.com/openOODA/website) | Official openOODA website source |
+| [openOODA/ooda](https://github.com/openOODA/ooda) | `ooda` workflow driver |
 | [openOODA/install](https://github.com/openOODA/install) | Installation scripts and platform packages |
-| [openOODA/.github](https://github.com/openOODA/.github) | Shared GitHub workflows and community health |
-| [openOODA/blackbox](https://github.com/openOODA/blackbox) | Operational Logistics: Agent-native execution flight recorder and crash autopsy engine |
+| [openOODA/opm](https://github.com/openOODA/opm) | Package manager |
+| [openOODA/catalog](https://github.com/openOODA/catalog) | Official ecosystem package catalog |
+| [openOODA/lsp](https://github.com/openOODA/lsp) | Language server |
+| [openOODA/mcp](https://github.com/openOODA/mcp) | MCP server |
+| [openOODA/bb](https://github.com/openOODA/bb) | Flight recorder and crash autopsy engine |
+| [openOODA/website](https://github.com/openOODA/website) | Official openooda.org website source |
+| [openOODA/.github](https://github.com/openOODA/.github) | Org profile, shared community files, workflows |
 
 ## License
 

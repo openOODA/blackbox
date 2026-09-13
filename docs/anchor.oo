@@ -1,22 +1,22 @@
-// # Blackbox Documentation Subsystem Front Door
+// # BB Documentation Subsystem Front Door
 //
 // Logline: Re-exports subsystem documentation references and specification contracts.
 //
-// Setup: Lists specification chapters in docs/blackbox.oot.
+// Setup: Lists specification chapters in docs/bb.oot.
 //
 // Beats:
-//   1. Register blackbox.oot specification file.
+//   1. Register bb.oot specification file.
 //   2. Expose subsystem documentation metadata.
 //   3. Provide agent documentation discovery entry point.
 
 pub fn docs_spec_file() -> String {
-    return "docs/blackbox.oot";
+    return "docs/bb.oot";
 }
 
 pub fn docs_title() -> String {
-    return "openOODA Blackbox Execution Flight Recorder and Crash Autopsy Subsystem";
+    return "openOODA BB Execution Flight Recorder and Crash Autopsy Subsystem";
 }
 
 pub fn docs_runbook_file() -> String {
-    return "docs/RUNBOOK.oot";
+    return "docs/runbook.oot";
 }

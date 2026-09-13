@@ -1,4 +1,4 @@
-// # Blackbox Surface Verifier Core
+// # BB Surface Verifier Core
 //
 // Logline: Predicates verifying repository invariants, MCP schemas, telemetry, and Blue Ocean CLI subcommands.
 //

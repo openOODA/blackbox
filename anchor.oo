@@ -1,8 +1,8 @@
-// # Blackbox Subsystem — Anchor for Agents
+// # BB Subsystem — Anchor for Agents
 //
-// Logline: Front door for the blackbox/ directory. Autopsy reader, tokens diff, and fail-closed trace.
+// Logline: Front door for the bb/ directory. Autopsy reader, tokens diff, and fail-closed trace.
 //
-// Setup: Seven subsystem directories. Version is 0.0.11 in VERSION and blackbox_version().
+// Setup: Seven subsystem directories. Version is 0.0.12 in VERSION and bb_version().
 //
 // Beats:
 //   1. record/ provides telemetry schemas and flight event records.
@@ -16,14 +16,14 @@
 //   8. .github/workflows/ci.yml is the build, test, and release entry
 //      point (gh-owned; no scripts/ runners).
 
-import "record/ANCHOR.oo";
-import "autopsy/ANCHOR.oo";
-import "diff/ANCHOR.oo";
-import "bridge/ANCHOR.oo";
-import "cli/ANCHOR.oo";
-import "qa/ANCHOR.oo";
-import "docs/ANCHOR.oo";
+import "record/anchor.oo";
+import "autopsy/anchor.oo";
+import "diff/anchor.oo";
+import "bridge/anchor.oo";
+import "cli/anchor.oo";
+import "qa/anchor.oo";
+import "docs/anchor.oo";
 
-pub fn blackbox_version() -> String {
-    return "0.0.11";
+pub fn bb_version() -> String {
+    return "0.0.12";
 }

@@ -1,4 +1,4 @@
-// # Blackbox Record Subsystem Front Door
+// # BB Record Subsystem Front Door
 //
 // Logline: Re-exports telemetry schema, event records, in-memory ring buffer, and flight log.
 //

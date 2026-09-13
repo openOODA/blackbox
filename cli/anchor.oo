@@ -1,0 +1,20 @@
+// # BB CLI Subsystem Front Door
+//
+// Logline: Re-exports command-line dispatch and the main executable entry point.
+//
+// Setup: Bound by ProcessCap, FsReadCap, FsWriteCap, EnvCap, TimeCap, ThreadCap.
+//
+// Beats:
+//   1. Re-export CLI dispatch for autopsy, diff, trace, and the Phase 6 verbs.
+//   2. Re-export main entry point function.
+//   3. Provide unified interface for CLI invocations.
+
+import "cli_run.oo";
+import "cli_inspect.oo";
+import "cli_dispatch_more.oo";
+import "cli_digest.oo";
+import "cli_health.oo";
+import "cli_bench.oo";
+import "cli_sandbox_status.oo";
+import "cli_swarm_status.oo";
+import "main.oo";

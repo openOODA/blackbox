@@ -1,4 +1,4 @@
-// # Blackbox Directory Watcher & Sentinel
+// # BB Directory Watcher & Sentinel
 //
 // Logline: Monitors directories for crash autopsy artifacts and flight logs, emitting diagnostic repair recipes.
 //

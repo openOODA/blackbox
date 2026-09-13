@@ -1,4 +1,4 @@
-// # Blackbox live compiler inspect
+// # BB live compiler inspect
 //
 // Logline: Runs oodac tokens, check, emit-c, or build and prints the child text.
 //

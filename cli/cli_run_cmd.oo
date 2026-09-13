@@ -1,4 +1,4 @@
-// # Blackbox CLI Run-and-Record Subcommand
+// # BB CLI Run-and-Record Subcommand
 //
 // Logline: Runs a child under ProcessCap and auto-persists a bounded flight capsule on failure.
 //

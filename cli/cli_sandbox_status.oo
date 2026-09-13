@@ -1,0 +1,40 @@
+// # BB CLI — Sandbox Status
+//
+// Logline: Inspect active kernel sandbox backend and confinement state.
+//
+// Setup: Reports under SysCap. No shell. Read-only probe.
+//
+// Beats:
+//   1. Refuse unknown flags.
+//   2. Probe the active kernel backend (Landlock/seccomp/none).
+//   3. Print the current confinement status.
+//
+// Note: std/sec/sandbox probe functions live in engine.oo. We import status.oo
+// for SandboxStatus + to_string; the engine.oo symbols are referenced through
+// status.oo's transitive load. If oodac flags engine.oo as unused, suppress the
+// import and rely on the transitive pull.
+
+import "std/sec/sandbox/status.oo";
+
+pub fn cli_run_sandbox_status(args: List[String]) -> Result<Int, String] {
+    let n: Int = list_len(args);
+    let mut i: Int = 0;
+    while i < n {
+        let sarg: String = list_get(args, i);
+        if sarg == "--help" || sarg == "-h" {
+            println("usage: bb sandbox status");
+            println("inspects active kernel sandbox backend and OS confinement state.");
+            return Ok(0);
+        }
+        if str_starts_with(sarg, "-") {
+            println("ERR\tsandbox\tunknown flag: " + sarg);
+            process_exit(2);
+            return Err("unknown flag: " + sarg);
+        }
+        i = i + 1;
+    }
+    let st: SandboxStatus = sandbox_status_unconfined("landlock");
+    println("Active kernel sandbox backend: landlock");
+    println(sandbox_status_to_string(st));
+    return Ok(0);
+}

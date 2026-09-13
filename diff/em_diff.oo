@@ -1,4 +1,4 @@
-// # Blackbox E-M Lowering Diff Engine
+// # BB E-M Lowering Diff Engine
 //
 // Logline: Synthesizes .em module representation and diffs pre-lowered AST tokens against emitted EM bytecode.
 //
